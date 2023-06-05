@@ -1,0 +1,96 @@
+alpha =  "A" | "B" | "C" | "D" | "E" | "F" | "G"
+       | "H" | "I" | "J" | "K" | "L" | "M" | "N"
+       | "O" | "P" | "Q" | "R" | "S" | "T" | "U"
+       | "V" | "W" | "X" | "Y" | "Z" | "a" | "b"
+       | "c" | "d" | "e" | "f" | "g" | "h" | "i"
+       | "j" | "k" | "l" | "m" | "n" | "o" | "p"
+       | "q" | "r" | "s" | "t" | "u" | "v" | "w"
+       | "x" | "y" | "z" ;
+
+binary = "0" | "1" ;
+octal = binary | "2" | "3" | "4" | "5" | "6" | "7" ;
+digit = octal | "8" | "9" ;
+hex = digit | "A" | "a" | "B" | "b" | "C" | "c" | "D" | "d" | "E" | "e" | "F" | "f" ;
+
+whitespace = { " " | "\t" | "\n" | "\r" } ;
+
+symbol =  "+" | "-" | "*" | "/" | "=" | "<" | ">"
+        | "(" | ")" | "{" | "}" | ";" | "," | "."
+        | ":" | "!" | "?" | "&" | "|" | "^" | "%"
+        | "$" | "#" | "@" | "~" | "`" | "'" | '"'
+        | "\\" | "/" | "[" | "]" | "_" | " " | "\t" | "\n" | "\r";
+
+ascii = alpha | digit | symbol ;
+
+control character = "\\" ,
+                        ( '"'
+                        | "\\"
+                        | "/"
+                        | "b"
+                        | "f"
+                        | "n"
+                        | "r"
+                        | "t"
+                        ) ;
+
+string = '"' , { ( ascii - ( '"' | "\\" | whitespace | " " ) ) | control character } , '"' ;
+number = ( "0x" , { hex } )
+        | ( "0o" , { octal } )
+        | ( "0b" , { binary } )
+        | ( [ "-" ] , { digit } , [ "." , { digit } ] ) ;
+
+identifier = alpha | "_" , { alpha | digit | "_" } ;
+
+termination = ";" ;
+
+bitwise unary expression = "~" , whitespace , expression ;
+bitwise expression = expression , whitespace , ( "&" | "|" | "^" | "<<" | ">>" | "<<<" | ">>>" ) , whitespace , expression ;
+
+algebraic unary expression = "-" , whitespace , expression ;
+algebraic expression = expression , whitespace , ( "+" | "-" | "*" | "/" | "%" ) , whitespace , expression ;
+
+increment expression = ( identifier , whitespace , "++" ) | ( "++" , whitespace , identifier ) ;
+decrement expression = ( identifier , whitespace , "--" ) | ( "--" , whitespace , identifier ) ;
+
+template expression = "<" , whitespace , expression , { whitespace , "," , whitespace , expression } , whitespace , ">" ;
+
+cast expression = "cast", template expression, whitespace, "(", whitespace, expression, whitespace, ")" ;
+
+unary condition = "!" , whitespace, expression ;
+binary condition = expression , whitespace , ( "==" | "!=" | "<" | ">" | "<=" | ">=" ) , whitespace , expression ;
+condtion = unary condition | binary condition ;
+
+inline condition = ( expression , "if" , condition )
+                        | ( expression , "if" , condition , "else" , expression ) ;
+
+expression = identifier
+                | number
+                | string
+                | "(" , expression , ")"
+                | bitwise unary expression
+                | bitwise expression
+                | algebraic unary expression
+                | algebraic expression
+                | increment expression
+                | decrement expression
+                | cast expression
+                | function call
+                ;
+
+variable declaration = identifier, [ template expression ] , whitespace , identifier , whitespace , "=" , whitespace , ( expression | inline condition ) ;
+
+block = "{" , whitespace , { statement } , whitespace , "}" ;
+
+condition = "if", whitespace, "(", whitespace, condition, whitespace, ")", whitespace, block, [ { whitespace , "else if" , whitespace , "(", whitespace, condition, whitespace, ")", whitespace, block } ] , [ whitespace, "else", whitespace, block ] ;
+
+loop = "while", whitespace, "(", whitespace, condition, whitespace, ")", whitespace, block ;
+
+statement = ( expression
+                | variable declaration
+                | condition
+                | loop
+        ) , whitespace , termination ;
+
+function declaration = identifier , whitespace , identifier , whitespace , "(" , whitespace , [ identifier , whitespace , identifier , "," , whitespace ] , ")" , whitespace , block ;
+
+function call = identifier , whitespace , "(" , whitespace , [ expression , whitespace , "," , whitespace ] , ")" ;
