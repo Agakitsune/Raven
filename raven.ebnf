@@ -1,0 +1,103 @@
+alpha = ? alpha character ? ;
+
+binary = "0" | "1" ;
+octal = binary | "2" | "3" | "4" | "5" | "6" | "7" ;
+digit = octal | "8" | "9" ;
+hex = digit | "A" | "a" | "B" | "b" | "C" | "c" | "D" | "d" | "E" | "e" | "F" | "f" ;
+
+whitespace = { ? space ? | "\t" | "\n" | "\r" } ;
+
+control character = "\" ,
+                        ( '"' (* quote *)
+                        | "\" (* slash *)
+                        | "/" (* backslash *)
+                        | "b" (* backspace *)
+                        | "f" (* formfeed *)
+                        | "n" (* linefeed *)
+                        | "r" (* carriage return *)
+                        | "t" (* tabulation *)
+                        | "v" (* vertical tabulation *)
+                        ) ;
+
+string literal = '"' , { ( ? all character except ", \ or control character ? ) | control character } , '"' ;
+
+number literal = ( "0x" , { hex } )
+                | ( "0o" , { octal } )
+                | ( "0b" , { binary } )
+                | ( [ "-" ] , { digit } , [ "."  , { digit } ] (* floating point *) ) ;
+
+boolean literal = "true" | "false" ;
+
+literal = string literal | number literal | boolean literal ;
+
+identifier = ( alpha | "_" ) , { alpha | digit | "_" } ;
+
+termination = ";" ;
+
+bitwise unary expression = "~" , whitespace , expression ;
+bitwise binary expression = expression , whitespace , ( "&" (* and *)
+                                                        | "|" (* or *)
+                                                        | "^" (* xor *)
+                                                        | "<<" (* left shift *)
+                                                        | ">>" (* right shift *)
+                                                        | "<<<" (* rotatory left shift *)
+                                                        | ">>>" (* rotatory right shift *)
+                                                        ) , whitespace , expression ;
+bitwise expression = bitwise unary expression | bitwise binary expression ;
+
+algebraic unary expression = "-" , whitespace , expression ;
+algebraic binary expression = expression , whitespace , ( "+" (* add *)
+                                                        | "-" (* subtract *)
+                                                        | "*" (* multiply *)
+                                                        | "/" (* divide *)
+                                                        | "%" (* modulo *)
+                                                        | "**" (* power *)
+                                                        ) , whitespace , expression ;
+algebraic expression = algebraic unary expression | algebraic binary expression ;
+
+update expression = ( identifier , whitespace , ( "++" | "--" ) )
+                | ( ( "++" | "--" ) , whitespace , identifier ) ;
+
+conditional unary expression = "!" , whitespace, expression ;
+conditional binary expression = expression , whitespace , ( "==" (* equal *)
+                                                        | "!=" (* not equal *)
+                                                        | "<" (* less than *)
+                                                        | ">" (* greater than *)
+                                                        | "<=" (* less than or equal *)
+                                                        | ">=" (* greater than or equal *)
+                                                        | "&&" (* and *)
+                                                        | "||" (* or *)
+                                                        | "^|" (* xor *)
+                                                        ) , whitespace , expression ;
+conditional expression = conditional unary expression | conditional binary expression ;
+
+conditional inline expression = expression , "if" , expression , [ "else" , expression ] ;
+
+call expression = identifier , whitespace , "(" , [ expression , { whitespace , "," , whitespace , expression } ] , ")" ;
+
+expression = literal
+                | identifier
+                | bitwise expression
+                | algebraic expression
+                | update expression
+                | conditional expression
+                | call expression ;
+
+variable declarator = "=" , whitespace , ( expression | conditional inline expression ) ;
+variable declaration = identifier , whitespace , identifier , [ variable declarator ] , whitespace , termination ;
+
+function declaration = identifier , whitespace , identifier , whitespace , "(" , [ identifier , whitespace , identifier , { whitespace , "," , whitespace , identifier , whitespace , identifier } ] , ")" , whitespace , block statement;
+
+block statement = "{" , { statement } , "}" ;
+
+conditional statement = "if" , whitespace , "(" , whitespace , expression , whitespace , ")" , whitespace , block statement , [ { "else if" , whitespace , "(" , whitespace , expression , whitespace , ")" , whitespace , block statement } ] , [ "else" , block statement ] ;
+
+loop statement = "while" , whitespace , "(" , whitespace , expression , whitespace , ")" , whitespace , block statement ;
+
+expression statement = expression , whitespace , termination ;
+
+statement = variable declaration
+                | block statement
+                | conditional statement
+                | loop statement
+                | expression statement ;
