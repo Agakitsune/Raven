@@ -1,96 +1,103 @@
-alpha =  "A" | "B" | "C" | "D" | "E" | "F" | "G"
-       | "H" | "I" | "J" | "K" | "L" | "M" | "N"
-       | "O" | "P" | "Q" | "R" | "S" | "T" | "U"
-       | "V" | "W" | "X" | "Y" | "Z" | "a" | "b"
-       | "c" | "d" | "e" | "f" | "g" | "h" | "i"
-       | "j" | "k" | "l" | "m" | "n" | "o" | "p"
-       | "q" | "r" | "s" | "t" | "u" | "v" | "w"
-       | "x" | "y" | "z" ;
+alpha = ? alpha character ? ;
 
 binary = "0" | "1" ;
 octal = binary | "2" | "3" | "4" | "5" | "6" | "7" ;
 digit = octal | "8" | "9" ;
 hex = digit | "A" | "a" | "B" | "b" | "C" | "c" | "D" | "d" | "E" | "e" | "F" | "f" ;
 
-whitespace = { " " | "\t" | "\n" | "\r" } ;
+whitespace = { ? space ? | "\t" | "\n" | "\r" } ;
 
-symbol =  "+" | "-" | "*" | "/" | "=" | "<" | ">"
-        | "(" | ")" | "{" | "}" | ";" | "," | "."
-        | ":" | "!" | "?" | "&" | "|" | "^" | "%"
-        | "$" | "#" | "@" | "~" | "`" | "'" | '"'
-        | "\\" | "/" | "[" | "]" | "_" | " " | "\t" | "\n" | "\r";
-
-ascii = alpha | digit | symbol ;
-
-control character = "\\" ,
-                        ( '"'
-                        | "\\"
-                        | "/"
-                        | "b"
-                        | "f"
-                        | "n"
-                        | "r"
-                        | "t"
+control character = "\" ,
+                        ( '"' (* quote *)
+                        | "\" (* slash *)
+                        | "/" (* backslash *)
+                        | "b" (* backspace *)
+                        | "f" (* formfeed *)
+                        | "n" (* linefeed *)
+                        | "r" (* carriage return *)
+                        | "t" (* tabulation *)
+                        | "v" (* vertical tabulation *)
                         ) ;
 
-string = '"' , { ( ascii - ( '"' | "\\" | whitespace | " " ) ) | control character } , '"' ;
-number = ( "0x" , { hex } )
-        | ( "0o" , { octal } )
-        | ( "0b" , { binary } )
-        | ( [ "-" ] , { digit } , [ "." , { digit } ] ) ;
+string literal = '"' , { ( ? all character except ", \ or control character ? ) | control character } , '"' ;
 
-identifier = alpha | "_" , { alpha | digit | "_" } ;
+number literal = ( "0x" , { hex } )
+                | ( "0o" , { octal } )
+                | ( "0b" , { binary } )
+                | ( [ "-" ] , { digit } , [ "."  , { digit } ] (* floating point *) ) ;
+
+boolean literal = "true" | "false" ;
+
+literal = string literal | number literal | boolean literal ;
+
+identifier = ( alpha | "_" ) , { alpha | digit | "_" } ;
 
 termination = ";" ;
 
 bitwise unary expression = "~" , whitespace , expression ;
-bitwise expression = expression , whitespace , ( "&" | "|" | "^" | "<<" | ">>" | "<<<" | ">>>" ) , whitespace , expression ;
+bitwise binary expression = expression , whitespace , ( "&" (* and *)
+                                                        | "|" (* or *)
+                                                        | "^" (* xor *)
+                                                        | "<<" (* left shift *)
+                                                        | ">>" (* right shift *)
+                                                        | "<<<" (* rotatory left shift *)
+                                                        | ">>>" (* rotatory right shift *)
+                                                        ) , whitespace , expression ;
+bitwise expression = bitwise unary expression | bitwise binary expression ;
 
 algebraic unary expression = "-" , whitespace , expression ;
-algebraic expression = expression , whitespace , ( "+" | "-" | "*" | "/" | "%" ) , whitespace , expression ;
+algebraic binary expression = expression , whitespace , ( "+" (* add *)
+                                                        | "-" (* subtract *)
+                                                        | "*" (* multiply *)
+                                                        | "/" (* divide *)
+                                                        | "%" (* modulo *)
+                                                        | "**" (* power *)
+                                                        ) , whitespace , expression ;
+algebraic expression = algebraic unary expression | algebraic binary expression ;
 
-increment expression = ( identifier , whitespace , "++" ) | ( "++" , whitespace , identifier ) ;
-decrement expression = ( identifier , whitespace , "--" ) | ( "--" , whitespace , identifier ) ;
+update expression = ( identifier , whitespace , ( "++" | "--" ) )
+                | ( ( "++" | "--" ) , whitespace , identifier ) ;
 
-template expression = "<" , whitespace , expression , { whitespace , "," , whitespace , expression } , whitespace , ">" ;
+conditional unary expression = "!" , whitespace, expression ;
+conditional binary expression = expression , whitespace , ( "==" (* equal *)
+                                                        | "!=" (* not equal *)
+                                                        | "<" (* less than *)
+                                                        | ">" (* greater than *)
+                                                        | "<=" (* less than or equal *)
+                                                        | ">=" (* greater than or equal *)
+                                                        | "&&" (* and *)
+                                                        | "||" (* or *)
+                                                        | "^|" (* xor *)
+                                                        ) , whitespace , expression ;
+conditional expression = conditional unary expression | conditional binary expression ;
 
-cast expression = "cast", template expression, whitespace, "(", whitespace, expression, whitespace, ")" ;
+conditional inline expression = expression , "if" , expression , [ "else" , expression ] ;
 
-unary condition = "!" , whitespace, expression ;
-binary condition = expression , whitespace , ( "==" | "!=" | "<" | ">" | "<=" | ">=" ) , whitespace , expression ;
-condtion = unary condition | binary condition ;
+call expression = identifier , whitespace , "(" , [ expression , { whitespace , "," , whitespace , expression } ] , ")" ;
 
-inline condition = ( expression , "if" , condition )
-                        | ( expression , "if" , condition , "else" , expression ) ;
-
-expression = identifier
-                | number
-                | string
-                | "(" , expression , ")"
-                | bitwise unary expression
+expression = literal
+                | identifier
                 | bitwise expression
-                | algebraic unary expression
                 | algebraic expression
-                | increment expression
-                | decrement expression
-                | cast expression
-                | function call
-                ;
+                | update expression
+                | conditional expression
+                | call expression ;
 
-variable declaration = identifier, [ template expression ] , whitespace , identifier , whitespace , "=" , whitespace , ( expression | inline condition ) ;
+variable declarator = "=" , whitespace , ( expression | conditional inline expression ) ;
+variable declaration = identifier , whitespace , identifier , [ variable declarator ] , whitespace , termination ;
 
-block = "{" , whitespace , { statement } , whitespace , "}" ;
+function declaration = identifier , whitespace , identifier , whitespace , "(" , [ identifier , whitespace , identifier , { whitespace , "," , whitespace , identifier , whitespace , identifier } ] , ")" , whitespace , block statement;
 
-condition = "if", whitespace, "(", whitespace, condition, whitespace, ")", whitespace, block, [ { whitespace , "else if" , whitespace , "(", whitespace, condition, whitespace, ")", whitespace, block } ] , [ whitespace, "else", whitespace, block ] ;
+block statement = "{" , { statement } , "}" ;
 
-loop = "while", whitespace, "(", whitespace, condition, whitespace, ")", whitespace, block ;
+conditional statement = "if" , whitespace , "(" , whitespace , expression , whitespace , ")" , whitespace , block statement , [ { "else if" , whitespace , "(" , whitespace , expression , whitespace , ")" , whitespace , block statement } ] , [ "else" , block statement ] ;
 
-statement = ( expression
-                | variable declaration
-                | condition
-                | loop
-        ) , whitespace , termination ;
+loop statement = "while" , whitespace , "(" , whitespace , expression , whitespace , ")" , whitespace , block statement ;
 
-function declaration = identifier , whitespace , identifier , whitespace , "(" , whitespace , [ identifier , whitespace , identifier , "," , whitespace ] , ")" , whitespace , block ;
+expression statement = expression , whitespace , termination ;
 
-function call = identifier , whitespace , "(" , whitespace , [ expression , whitespace , "," , whitespace ] , ")" ;
+statement = variable declaration
+                | block statement
+                | conditional statement
+                | loop statement
+                | expression statement ;
