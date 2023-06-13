@@ -4,7 +4,7 @@ NAME = ravenc
 
 HSCC = ghc
 
-HS_SRC = $(shell find src/haskell -name "*.hs")
+HS_SRC = $(shell find src/haskell -not -path "*/tests*" -name "*.hs")
 
 CPP_SRC = $(shell find src/cpp -name "*.cpp")
 

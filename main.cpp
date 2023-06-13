@@ -4,5 +4,5 @@
 
 int main(int argc, char *argv[]) {
     hs_init(&argc, &argv);
-    std::cout << test() << std::endl;
+    // std::cout << test() << std::endl;
 }

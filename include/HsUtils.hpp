@@ -11,6 +11,4 @@
 
 extern "C" {
     void hs_init(int *argc, char **argv[]);
-	HsInt32 test(void);
-	HsInt32 kek(void);
 }
