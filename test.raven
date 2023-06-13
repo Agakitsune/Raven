@@ -1,0 +1,11 @@
+Integer main() {
+    Integer said = 3;
+    Character kew = 'a';
+    if (said < 4) {
+        said = 4;
+    } else {
+        said = 5;
+    }
+    said++;
+    return said;
+}
