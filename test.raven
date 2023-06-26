@@ -6,6 +6,9 @@ Integer main() {
     } else {
         said = 5;
     }
+    {
+        said++;
+    }
     said++;
     return said;
 }

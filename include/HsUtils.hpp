@@ -11,4 +11,6 @@
 
 extern "C" {
     void hs_init(int *argc, char **argv[]);
+    void hs_exit();
+	HsPtr ravenSerialize(HsPtr a1);
 }

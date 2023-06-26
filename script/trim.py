@@ -25,7 +25,8 @@ with open("./include/HsUtils.hpp", 'w') as utils:
 #include <HsFFI.h>
 
 extern "C" {
-    void hs_init(int *argc, char **argv[]);\n"""
+    void hs_init(int *argc, char **argv[]);
+    void hs_exit();\n"""
     )
 
     for m in methods:

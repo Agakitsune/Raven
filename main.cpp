@@ -4,5 +4,8 @@
 
 int main(int argc, char *argv[]) {
     hs_init(&argc, &argv);
-    // std::cout << test() << std::endl;
+    char test[] = "test.raven";
+    uint8_t *data = reinterpret_cast<uint8_t*>(ravenSerialize(test));
+    std::cout << (int)data[0] << std::endl;
+    hs_exit();
 }

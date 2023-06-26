@@ -1,16 +1,18 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Parser where
 
-import Foreign.C.Types
+import Foreign.C.String (CString, peekCAString)
 import Text.Megaparsec
 import Text.Megaparsec.Char (string, space1, newline)
 import Text.Megaparsec.Char.Lexer
 import Text.Megaparsec.Debug
 import Data.Functor
 import Control.Monad
+import Control.Arrow
 import Data.Text (Text, pack, unpack)
 import Data.Void
 import Data.Char (isAlpha, isAlphaNum, isDigit, isOctDigit, isHexDigit)
@@ -19,7 +21,9 @@ import Data.Tuple (swap)
 import Data.Set (Set, singleton)
 
 import GHC.Int (Int64)
-import Data.ByteString (ByteString)
+import Data.ByteString (useAsCString)
+import Data.ByteString.Lazy (ByteString, putStr, toStrict)
+import Data.ByteString.Lazy.UTF8 (fromString)
 import Data.Binary.Put
 import Data.Word
 
@@ -119,8 +123,89 @@ instance Show Statement where
      show (ReturnStatement Nothing) = "Return"
      show (ReturnStatement (Just e)) = "Return " ++ show e
 
--- instance RavenSerialize Literal where
-     -- serialize (Number d) = pack $ show d
+instance RavenSerialize String where
+     serialize s = fromString s <> fromString "\0"
+
+instance RavenSerialize Literal where
+     serialize (Floating d) = runPut $ putWord8 0 <> putDoublebe d
+     serialize (Integral i) = runPut $ putWord8 0 <> putInt64be i
+     serialize (String s) = fromString "\0" <> serialize s
+     serialize (Boolean True) = runPut $ putWord8 2 <> putWord8 1
+     serialize (Boolean False) = runPut $ putWord8 2 <> putWord8 0
+     serialize (Character c) = runPut (putWord8 3) <> fromString [c]
+     serialize (Null) = runPut $ putWord8 4
+
+instance RavenSerialize Operator where
+     serialize (Operator _ _ "~") = runPut $ putWord8 0
+     serialize (Operator _ _ "&") = runPut $ putWord8 1
+     serialize (Operator _ _ "|") = runPut $ putWord8 2
+     serialize (Operator _ _ "^") = runPut $ putWord8 3
+     serialize (Operator _ _ "<<") = runPut $ putWord8 4
+     serialize (Operator _ _ ">>") = runPut $ putWord8 5
+     serialize (Operator _ _ "<<<") = runPut $ putWord8 6
+     serialize (Operator _ _ ">>>") = runPut $ putWord8 7
+     serialize (Operator _ Unary "-") = runPut $ putWord8 8
+     serialize (Operator _ _ "+") = runPut $ putWord8 9
+     serialize (Operator _ Binary "-") = runPut $ putWord8 10
+     serialize (Operator _ _ "*") = runPut $ putWord8 11
+     serialize (Operator _ _ "/") = runPut $ putWord8 12
+     serialize (Operator _ _ "%") = runPut $ putWord8 13
+     serialize (Operator _ _ "**") = runPut $ putWord8 14
+     serialize (Operator _ _ "!") = runPut $ putWord8 15
+     serialize (Operator _ _ "==") = runPut $ putWord8 16
+     serialize (Operator _ _ "!=") = runPut $ putWord8 17
+     serialize (Operator _ _ "<") = runPut $ putWord8 18
+     serialize (Operator _ _ ">") = runPut $ putWord8 19
+     serialize (Operator _ _ "<=") = runPut $ putWord8 20
+     serialize (Operator _ _ ">=") = runPut $ putWord8 21
+     serialize (Operator _ _ "&&") = runPut $ putWord8 22
+     serialize (Operator _ _ "||") = runPut $ putWord8 23
+     serialize (Operator _ _ "^|") = runPut $ putWord8 24
+     serialize (PrePostOperator True _ _ "++") = runPut $ putWord8 25
+     serialize (PrePostOperator True _ _ "--") = runPut $ putWord8 26
+     serialize (PrePostOperator False _ _ "++") = runPut $ putWord8 27
+     serialize (PrePostOperator False _ _ "--") = runPut $ putWord8 28
+     serialize (Operator _ _ "=") = runPut $ putWord8 29
+     serialize (Operator _ _ "+=") = runPut $ putWord8 30
+     serialize (Operator _ _ "-=") = runPut $ putWord8 31
+     serialize (Operator _ _ "*=") = runPut $ putWord8 32
+     serialize (Operator _ _ "/=") = runPut $ putWord8 33
+     serialize (Operator _ _ "%=") = runPut $ putWord8 34
+     serialize (Operator _ _ "**=") = runPut $ putWord8 35
+     serialize (Operator _ _ "&=") = runPut $ putWord8 36
+     serialize (Operator _ _ "|=") = runPut $ putWord8 37
+     serialize (Operator _ _ "^=") = runPut $ putWord8 38
+     serialize (Operator _ _ ">>=") = runPut $ putWord8 39
+     serialize (Operator _ _ "<<=") = runPut $ putWord8 40
+     serialize (Operator _ _ ">>>=") = runPut $ putWord8 41
+     serialize (Operator _ _ "<<<=") = runPut $ putWord8 42
+
+instance RavenSerialize Call where
+     serialize (Call n as) = serialize n <> runPut (putWord8 $ fromIntegral $ Data.List.length as) <> foldl (<>) (fromString "") (map serialize as)
+
+instance RavenSerialize Expression where
+     serialize (LiteralExpression l) = runPut (putWord8 0) <> serialize l
+     serialize (IdentifierExpression i) = runPut (putWord8 1) <> serialize i
+     serialize (BinaryExpression e1 o e2) = runPut (putWord8 2) <> serialize o <> serialize e1 <> serialize e2
+     serialize (UnaryExpression o e) = runPut (putWord8 2) <> serialize o <> serialize e
+     serialize (CallExpression c) = runPut (putWord8 3) <> serialize c
+     serialize (FoldedExpression e) = runPut (putWord8 4) <> serialize e
+
+instance RavenSerialize Declaration where
+     serialize (VariableDeclaration t n Nothing) = runPut (putWord8 0) <> serialize t <> serialize n <> runPut (putWord8 0)
+     serialize (VariableDeclaration t n (Just e)) = runPut (putWord8 0) <> serialize t <> serialize n <> runPut (putWord8 1) <> serialize e
+     serialize (FunctionDeclaration t n as blk) = runPut (putWord8 1) <> serialize t <> serialize n <> runPut (putWord8 $ fromIntegral $ Data.List.length as) <> foldl (<>) (fromString "") (map ((uncurry (<>)) . join (***) serialize) as) <> serialize blk
+
+instance RavenSerialize Statement where
+     serialize (BlockStatement lst) = runPut (putWord8 0) <> runPut (putWord8 10) <> foldl (<>) (fromString "") (map serialize lst) <> runPut (putWord8 10)
+     serialize (ExpressionStatement e) = runPut (putWord8 1) <> serialize e
+     serialize (DeclarationStatement dlcr) = runPut (putWord8 2) <> serialize dlcr
+     serialize (IfStatement e blk Nothing) = runPut (putWord8 3) <> serialize e <> serialize blk <> runPut (putWord8 0)
+     serialize (IfStatement e blk (Just opt@(IfStatement _ _ _))) = runPut (putWord8 3) <> serialize e <> serialize blk <> runPut (putWord8 1) <> runPut (putWord8 1) <> serialize opt
+     serialize (IfStatement e blk (Just opt@(BlockStatement _))) = runPut (putWord8 3) <> serialize e <> serialize blk <> runPut (putWord8 1) <> runPut (putWord8 0) <> serialize opt
+     serialize (LoopStatement e blk) = runPut (putWord8 4) <> serialize e <> serialize blk
+     serialize (ReturnStatement Nothing) = runPut (putWord8 5) <> runPut (putWord8 0)
+     serialize (ReturnStatement (Just e)) = runPut (putWord8 5) <> runPut (putWord8 1) <> serialize e
 
 alpha :: Parser Char
 alpha = satisfy isAlpha
@@ -667,3 +752,14 @@ functionDeclaration = do
 
 ravenParser :: Parser [Declaration]
 ravenParser = many (whitespace *> (functionDeclaration <|> (variableDeclaration <* whitespace <* termination)) <* whitespace) <* eof
+
+foreign export ccall ravenSerialize :: CString -> IO CString
+
+ravenSerialize :: CString -> IO CString
+ravenSerialize cfile = do
+     (peekCAString cfile >>= Data.Text.IO.readFile) >>= \dat -> case parse ravenParser "" dat of
+          (Left err) -> error $ errorBundlePretty err
+          (Right decls) -> useAsCString (toStrict $ foldl (<>) (fromString "") . map serialize $ decls) pure
+
+serializeTest :: RavenSerialize a => a -> IO ()
+serializeTest a = Data.ByteString.Lazy.putStr $ serialize a
