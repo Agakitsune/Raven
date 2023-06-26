@@ -18,12 +18,21 @@ import Data.List
 import Data.Tuple (swap)
 import Data.Set (Set, singleton)
 
+import GHC.Int (Int64)
+import Data.ByteString (ByteString)
+import Data.Binary.Put
+import Data.Word
+
 import System.Environment
 import Data.Text.IO
 
+class RavenSerialize a where
+     serialize :: a -> ByteString
+
 type Parser = Parsec Void Text
 
-data Literal = Number Double
+data Literal = Floating Double
+             | Integral Int64
              | String String
              | Boolean Bool
              | Character Char
@@ -64,7 +73,8 @@ data Statement = BlockStatement [Statement]
           deriving (Eq)
 
 instance Show Literal where
-     show (Number d) = show d
+     show (Floating d) = show d
+     show (Integral i) = show i
      show (String s) = show s
      show (Boolean b) = show b
      show (Character c) = show c
@@ -109,6 +119,9 @@ instance Show Statement where
      show (ReturnStatement Nothing) = "Return"
      show (ReturnStatement (Just e)) = "Return " ++ show e
 
+-- instance RavenSerialize Literal where
+     -- serialize (Number d) = pack $ show d
+
 alpha :: Parser Char
 alpha = satisfy isAlpha
 
@@ -137,19 +150,24 @@ stringLiteral = do
           (Left _) -> setOffset o *> fail "invalid string literal"
           (Right str) -> pure str
 
-number :: Parser Double
-number = do
+floatLiteral :: Parser Double
+floatLiteral = do
+     o <- getOffset
+     r <- observing $ (:) <$> (num1_9 <|> single '0') <*> many num >>= \i -> (single '.' *> some num <* (notFollowedBy (single 'e' <|> single 'E' <|> single '.')) >>= \f -> pure $ read (i ++ "." ++ f))
+     case r of
+          (Left _) -> setOffset o *> fail "invalid number literal"
+          (Right f) -> pure f
+
+integralLiteral :: Parser Int64
+integralLiteral = do
      o <- getOffset
      r <- observing $ string "0x" *> hexadecimal
           <|> string "0o" *> octal
           <|> string "0b" *> binary
-          <|> try floatLiteral <|> (decimal <* (notFollowedBy (single '.')))
+          <|> (decimal <* (notFollowedBy (single '.')))
      case r of
           (Left _) -> setOffset o *> fail "invalid number literal"
           (Right n) -> pure n
-
-floatLiteral :: Parser Double
-floatLiteral = (:) <$> (num1_9 <|> single '0') <*> many num >>= \i -> (single '.' *> many num <* (notFollowedBy (single 'e' <|> single 'E' <|> single '.')) >>= \f -> pure $ read (i ++ "." ++ f)) <|> pure (read i)
 
 boolean :: Parser Bool
 boolean = (string "true" $> True) <|> (string "false" $> False) <|> fail "invalid boolean literal"
@@ -160,7 +178,7 @@ nullLiteral = string "null" $> Null
 literal :: Parser Literal
 literal = do
      o <- getOffset
-     r <- observing $ (Number <$> number) <|> (Boolean <$> boolean) <|> (String <$> stringLiteral) <|> (Character <$> character)
+     r <- observing $ (try $ Floating <$> floatLiteral) <|> (Integral <$> integralLiteral) <|> (Boolean <$> boolean) <|> (String <$> stringLiteral) <|> (Character <$> character)
      case r of
           (Left _) -> setOffset o *> fail "invalid literal"
           (Right l) -> pure l
@@ -325,7 +343,7 @@ identifierExpression :: Parser Expression
 identifierExpression = IdentifierExpression <$> identifier
 
 numberLiteralExpression :: Parser Expression
-numberLiteralExpression = LiteralExpression <$> Number <$> number
+numberLiteralExpression = LiteralExpression <$> ((Floating <$> floatLiteral) <|> (Integral <$> integralLiteral))
 
 callExpression :: Parser Expression
 callExpression = do

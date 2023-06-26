@@ -36,31 +36,31 @@ stringTest = do
 numberTest :: SpecWith (Arg Expectation)
 numberTest = do
     it "number" $
-        parse number "" "123" `shouldParse` 123
-    it "binaryNumber" $
-        parse number "" "0b101" `shouldParse` 5
-    it "hexNumber" $
-        parse number "" "0x1f" `shouldParse` 31
-    it "octalNumber" $
-        parse number "" "0o37" `shouldParse` 31
-    it "floatNumber" $
-        parse number "" "1.23" `shouldParse` 1.23
-    it "floatNumber2" $
-        parse number "" "0.23" `shouldParse` 0.23
+        parse integralLiteral "" "123" `shouldParse` 123
+    it "binaryIntegral" $
+        parse integralLiteral "" "0b101" `shouldParse` 5
+    it "hexIntegral" $
+        parse integralLiteral "" "0x1f" `shouldParse` 31
+    it "octalIntegral" $
+        parse integralLiteral "" "0o37" `shouldParse` 31
+    it "floatIntegral" $
+        parse floatLiteral "" "1.23" `shouldParse` 1.23
+    it "floatIntegral2" $
+        parse floatLiteral "" "0.23" `shouldParse` 0.23
     it "number Failure" $
-        parse number "" "abc" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
+        parse integralLiteral "" "abc" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
     it "number Failure2" $
-        parse number "" "0b2" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
+        parse integralLiteral "" "0b2" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
     it "number Failure3" $
-        parse number "" "0xg" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
+        parse integralLiteral "" "0xg" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
     it "number Failure4" $
-        parse number "" "0o8" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
+        parse integralLiteral "" "0o8" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
     it "number Failure5" $
-        parse number "" "1.23e" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
+        parse floatLiteral "" "1.23e" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
     it "number Failure6" $
-        parse number "" "1.23E" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
+        parse floatLiteral "" "1.23E" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
     it "number Failure7" $
-        parse (number <* eof) "" "0.2.3" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
+        parse (floatLiteral <* eof) "" "0.2.3" `shouldFailWith` errFancy 0 (fancy $ ErrorFail "invalid number literal")
 
 booleanTest :: SpecWith (Arg Expectation)
 booleanTest = do
@@ -74,7 +74,9 @@ booleanTest = do
 literalTest :: SpecWith (Arg Expectation)
 literalTest = do
     it "literal" $
-        parse literal "" "123" `shouldParse` Number 123
+        parse literal "" "123" `shouldParse` Integral 123
+    it "literalFloat" $
+        parse literal "" "12.3" `shouldParse` Floating 12.3
     it "literal2" $
         parse literal "" "\"abc\"" `shouldParse` String "abc"
     it "literal3" $
@@ -242,8 +244,10 @@ operatorTest = do
 
 simpleLiteralExpressionTest :: SpecWith (Arg Expectation)
 simpleLiteralExpressionTest = do
-    it "number" $
-        parse expression "" "123" `shouldParse` (LiteralExpression (Number 123))
+    it "integral" $
+        parse expression "" "123" `shouldParse` (LiteralExpression (Integral 123))
+    it "floating" $
+        parse expression "" "12.3" `shouldParse` (LiteralExpression (Floating 12.3))
     it "string" $
         parse expression "" "\"abc\"" `shouldParse` (LiteralExpression (String "abc"))
     it "boolean" $
@@ -259,11 +263,11 @@ simpleIdentifierExpressionTest = do
 simpleOperatorExpressionTest :: SpecWith (Arg Expectation)
 simpleOperatorExpressionTest = do
     it "unary operator" $
-        parse expression "" "-123" `shouldParse` (UnaryExpression (Operator Arithmetic Unary "-") (LiteralExpression (Number 123)))
+        parse expression "" "-123" `shouldParse` (UnaryExpression (Operator Arithmetic Unary "-") (LiteralExpression (Integral 123)))
     it "unary operator2" $
         parse expression "" "!true" `shouldParse` (UnaryExpression (Operator Logical Unary "!") (LiteralExpression (Boolean True)))
     it "binary operator" $
-        parse expression "" "123 + 456" `shouldParse` (BinaryExpression (LiteralExpression (Number 123)) (Operator Arithmetic Binary "+") (LiteralExpression (Number 456)))
+        parse expression "" "123 + 456" `shouldParse` (BinaryExpression (LiteralExpression (Integral 123)) (Operator Arithmetic Binary "+") (LiteralExpression (Integral 456)))
     it "binary operator2" $
         parse expression "" "kew <<< hub" `shouldParse` (BinaryExpression (IdentifierExpression "kew") (Operator Bitwise Binary "<<<") (IdentifierExpression "hub"))
 
@@ -272,25 +276,25 @@ simpleFunctionCallExpressionTest = do
     it "function call" $
         parse expression "" "abc()" `shouldParse` (CallExpression $ Call "abc" [])
     it "function call2" $
-        parse expression "" "abc(123)" `shouldParse` (CallExpression $ Call "abc" [(LiteralExpression (Number 123))])
+        parse expression "" "abc(123)" `shouldParse` (CallExpression $ Call "abc" [(LiteralExpression (Integral 123))])
     it "function call3" $
-        parse expression "" "abc(123, 456)" `shouldParse` (CallExpression $ Call "abc" [(LiteralExpression (Number 123)), (LiteralExpression (Number 456))])
+        parse expression "" "abc(123, 456)" `shouldParse` (CallExpression $ Call "abc" [(LiteralExpression (Integral 123)), (LiteralExpression (Integral 456))])
 
 complexOperatorExpressionTest :: SpecWith (Arg Expectation)
 complexOperatorExpressionTest = do
     it "!(4 + 5 * (2 - a))" $
-        parse expression "" "!(4 + 5 * (2 - a))" `shouldParse` (UnaryExpression (Operator Logical Unary "!") $ FoldedExpression $ (BinaryExpression (LiteralExpression (Number 4)) (Operator Arithmetic Binary "+") (BinaryExpression (LiteralExpression (Number 5)) (Operator Arithmetic Binary "*") $ FoldedExpression $ (BinaryExpression (LiteralExpression (Number 2)) (Operator Arithmetic Binary "-") (IdentifierExpression "a")))))
+        parse expression "" "!(4 + 5 * (2 - a))" `shouldParse` (UnaryExpression (Operator Logical Unary "!") $ FoldedExpression $ (BinaryExpression (LiteralExpression (Integral 4)) (Operator Arithmetic Binary "+") (BinaryExpression (LiteralExpression (Integral 5)) (Operator Arithmetic Binary "*") $ FoldedExpression $ (BinaryExpression (LiteralExpression (Integral 2)) (Operator Arithmetic Binary "-") (IdentifierExpression "a")))))
     it "a + b * c + d" $
         parse expression "" "a + b * c + d" `shouldParse` (BinaryExpression (IdentifierExpression "a") (Operator Arithmetic Binary "+") (BinaryExpression (IdentifierExpression "b") (Operator Arithmetic Binary "*") (BinaryExpression (IdentifierExpression "c") (Operator Arithmetic Binary "+") (IdentifierExpression "d"))))
     it "hub <<< (n & ~(mask >> 1))" $
-        parse expression "" "hub <<< (n & ~(mask >> 1))" `shouldParse` (BinaryExpression (IdentifierExpression "hub") (Operator Bitwise Binary "<<<") $ FoldedExpression $ (BinaryExpression (IdentifierExpression "n") (Operator Bitwise Binary "&") (UnaryExpression (Operator Bitwise Unary "~") $ FoldedExpression $ (BinaryExpression (IdentifierExpression "mask") (Operator Bitwise Binary ">>") (LiteralExpression (Number 1))))))
+        parse expression "" "hub <<< (n & ~(mask >> 1))" `shouldParse` (BinaryExpression (IdentifierExpression "hub") (Operator Bitwise Binary "<<<") $ FoldedExpression $ (BinaryExpression (IdentifierExpression "n") (Operator Bitwise Binary "&") (UnaryExpression (Operator Bitwise Unary "~") $ FoldedExpression $ (BinaryExpression (IdentifierExpression "mask") (Operator Bitwise Binary ">>") (LiteralExpression (Integral 1))))))
 
 complexFunctionCallExpressionTest :: SpecWith (Arg Expectation)
 complexFunctionCallExpressionTest = do
     it "abc(123 + a, -factorial(4))" $
-        parse expression "" "abc(123 + a, -factorial(4))" `shouldParse` (CallExpression $ Call "abc" [(BinaryExpression (LiteralExpression (Number 123)) (Operator Arithmetic Binary "+") (IdentifierExpression "a")), (UnaryExpression (Operator Arithmetic Unary "-") $ CallExpression $ Call "factorial" [(LiteralExpression (Number 4))])])
+        parse expression "" "abc(123 + a, -factorial(4))" `shouldParse` (CallExpression $ Call "abc" [(BinaryExpression (LiteralExpression (Integral 123)) (Operator Arithmetic Binary "+") (IdentifierExpression "a")), (UnaryExpression (Operator Arithmetic Unary "-") $ CallExpression $ Call "factorial" [(LiteralExpression (Integral 4))])])
     it "abc((125 + 2) * 4)" $
-        parse expression "" "abc((125 + 2) * 4)" `shouldParse` (CallExpression $ Call "abc" [BinaryExpression (FoldedExpression (BinaryExpression (LiteralExpression (Number 125)) (Operator Arithmetic Binary "+") (LiteralExpression (Number 2)))) (Operator Arithmetic Binary "*") (LiteralExpression (Number 4))])
+        parse expression "" "abc((125 + 2) * 4)" `shouldParse` (CallExpression $ Call "abc" [BinaryExpression (FoldedExpression (BinaryExpression (LiteralExpression (Integral 125)) (Operator Arithmetic Binary "+") (LiteralExpression (Integral 2)))) (Operator Arithmetic Binary "*") (LiteralExpression (Integral 4))])
 
 updateExpressionTest :: SpecWith (Arg Expectation)
 updateExpressionTest = do
@@ -303,9 +307,9 @@ updateExpressionTest = do
     it "a--" $
         parse expression "" "a--" `shouldParse` (UnaryExpression (PrePostOperator True Update Unary "--") (IdentifierExpression "a"))
     it "(4 * 2)--" $
-        parse expression "" "(4 * 2)--" `shouldParse` (UnaryExpression (PrePostOperator True Update Unary "--") $ FoldedExpression $ (BinaryExpression (LiteralExpression (Number 4)) (Operator Arithmetic Binary "*") (LiteralExpression (Number 2))))
+        parse expression "" "(4 * 2)--" `shouldParse` (UnaryExpression (PrePostOperator True Update Unary "--") $ FoldedExpression $ (BinaryExpression (LiteralExpression (Integral 4)) (Operator Arithmetic Binary "*") (LiteralExpression (Integral 2))))
     it "++(4 * 2)" $
-        parse expression "" "++(4 * 2)" `shouldParse` (UnaryExpression (PrePostOperator False Update Unary "++") $ FoldedExpression $ (BinaryExpression (LiteralExpression (Number 4)) (Operator Arithmetic Binary "*") (LiteralExpression (Number 2))))
+        parse expression "" "++(4 * 2)" `shouldParse` (UnaryExpression (PrePostOperator False Update Unary "++") $ FoldedExpression $ (BinaryExpression (LiteralExpression (Integral 4)) (Operator Arithmetic Binary "*") (LiteralExpression (Integral 2))))
     it "abc()++" $
         parse expression "" "abc()++" `shouldParse` (UnaryExpression (PrePostOperator True Update Unary "++") (CallExpression $ Call "abc" []))
     it "++abc()" $
@@ -327,9 +331,9 @@ variableDeclarationTest = do
     it "Integer a" $
         parse variableDeclaration "" "Integer a" `shouldParse` (VariableDeclaration "Integer" "a" Nothing)
     it "Integer a = 123" $
-        parse variableDeclaration "" "Integer a = 123" `shouldParse` (VariableDeclaration "Integer" "a" (Just (LiteralExpression (Number 123))))
+        parse variableDeclaration "" "Integer a = 123" `shouldParse` (VariableDeclaration "Integer" "a" (Just (LiteralExpression (Integral 123))))
     it "Integer a = 123 + 456" $
-        parse variableDeclaration "" "Integer a = 123 + 456" `shouldParse` (VariableDeclaration "Integer" "a" (Just (BinaryExpression (LiteralExpression (Number 123)) (Operator Arithmetic Binary "+") (LiteralExpression (Number 456)))))
+        parse variableDeclaration "" "Integer a = 123 + 456" `shouldParse` (VariableDeclaration "Integer" "a" (Just (BinaryExpression (LiteralExpression (Integral 123)) (Operator Arithmetic Binary "+") (LiteralExpression (Integral 456)))))
     it "Integer a = null" $
         parse variableDeclaration "" "Integer a = null" `shouldParse` (VariableDeclaration "Integer" "a" (Just (LiteralExpression Null)))
     it "Integer = 123" $
@@ -346,9 +350,9 @@ variableDeclarationStatementTest = do
     it "Integer a;" $
         parse statement "" "Integer a;" `shouldParse` (DeclarationStatement (VariableDeclaration "Integer" "a" Nothing))
     it "Integer a = 123;" $
-        parse statement "" "Integer a = 123;" `shouldParse` (DeclarationStatement (VariableDeclaration "Integer" "a" (Just (LiteralExpression (Number 123)))))
+        parse statement "" "Integer a = 123;" `shouldParse` (DeclarationStatement (VariableDeclaration "Integer" "a" (Just (LiteralExpression (Integral 123)))))
     it "Integer a = 123 + 456;" $
-        parse statement "" "Integer a = 123 + 456;" `shouldParse` (DeclarationStatement (VariableDeclaration "Integer" "a" (Just (BinaryExpression (LiteralExpression (Number 123)) (Operator Arithmetic Binary "+") (LiteralExpression (Number 456))))))
+        parse statement "" "Integer a = 123 + 456;" `shouldParse` (DeclarationStatement (VariableDeclaration "Integer" "a" (Just (BinaryExpression (LiteralExpression (Integral 123)) (Operator Arithmetic Binary "+") (LiteralExpression (Integral 456))))))
     it "Integer a = null;" $
         parse statement "" "Integer a = null;" `shouldParse` (DeclarationStatement (VariableDeclaration "Integer" "a" (Just (LiteralExpression Null))))
     it "Integer = 123;" $
@@ -365,9 +369,9 @@ expressionStatementTest = do
     it "a;" $
         parse statement "" "a;" `shouldParse` (ExpressionStatement (IdentifierExpression "a"))
     it "a = 123;" $
-        parse statement "" "a = 123;" `shouldParse` (ExpressionStatement (BinaryExpression (IdentifierExpression "a") (Operator Assignment Binary "=") (LiteralExpression (Number 123))))
+        parse statement "" "a = 123;" `shouldParse` (ExpressionStatement (BinaryExpression (IdentifierExpression "a") (Operator Assignment Binary "=") (LiteralExpression (Integral 123))))
     it "a = 123 + 456;" $
-        parse statement "" "a = 123 + 456;" `shouldParse` (ExpressionStatement (BinaryExpression (IdentifierExpression "a") (Operator Assignment Binary "=") (BinaryExpression (LiteralExpression (Number 123)) (Operator Arithmetic Binary "+") (LiteralExpression (Number 456)))))
+        parse statement "" "a = 123 + 456;" `shouldParse` (ExpressionStatement (BinaryExpression (IdentifierExpression "a") (Operator Assignment Binary "=") (BinaryExpression (LiteralExpression (Integral 123)) (Operator Arithmetic Binary "+") (LiteralExpression (Integral 456)))))
     it "a = null;" $
         parse statement "" "a = null;" `shouldParse` (ExpressionStatement (BinaryExpression (IdentifierExpression "a") (Operator Assignment Binary "=") (LiteralExpression Null)))
     it "a++;" $
@@ -388,7 +392,7 @@ blockStatementTest = do
     it "{a; b;}" $
         parse statement "" "{a; b;}" `shouldParse` (BlockStatement [(ExpressionStatement (IdentifierExpression "a")), (ExpressionStatement (IdentifierExpression "b"))])
     it "{Integer a = 4; a = 4;   }" $
-        parse statement "" "{Integer a = 4; a = 4;   }" `shouldParse` (BlockStatement [(DeclarationStatement (VariableDeclaration "Integer" "a" (Just (LiteralExpression (Number 4))))), (ExpressionStatement (BinaryExpression (IdentifierExpression "a") (Operator Assignment Binary "=") (LiteralExpression (Number 4))))])
+        parse statement "" "{Integer a = 4; a = 4;   }" `shouldParse` (BlockStatement [(DeclarationStatement (VariableDeclaration "Integer" "a" (Just (LiteralExpression (Integral 4))))), (ExpressionStatement (BinaryExpression (IdentifierExpression "a") (Operator Assignment Binary "=") (LiteralExpression (Integral 4))))])
     it "{{a;}b;}" $
         parse statement "" "{{a;}b;}" `shouldParse` (BlockStatement [(BlockStatement [(ExpressionStatement (IdentifierExpression "a"))]), (ExpressionStatement (IdentifierExpression "b"))])
     it "{Integer a = 4;" $
@@ -432,7 +436,7 @@ ifStatementTest = do
     it "if (true) {a;} else if (b) {b;}" $
         parse statement "" "if (true) {a;} else if (b) {b;}" `shouldParse` (IfStatement (LiteralExpression (Boolean True)) (BlockStatement [(ExpressionStatement (IdentifierExpression "a"))]) (Just (IfStatement (IdentifierExpression "b") (BlockStatement [(ExpressionStatement (IdentifierExpression "b"))]) Nothing)))
     it "if ((a + b) * 4 == 45) {} else if (denis() == true) {} else {}" $
-        parse statement "" "if ((a + b) * 4 == 45) {} else if (denis() == true) {} else {}" `shouldParse` (IfStatement (BinaryExpression (FoldedExpression (BinaryExpression (IdentifierExpression "a") (Operator Arithmetic Binary "+") (IdentifierExpression "b"))) (Operator Arithmetic Binary "*") (BinaryExpression (LiteralExpression (Number 4)) (Operator Comparison Binary "==") (LiteralExpression (Number 45)))) (BlockStatement []) (Just (IfStatement (BinaryExpression (CallExpression $ Call "denis" []) (Operator Comparison Binary "==") (LiteralExpression (Boolean True))) (BlockStatement []) (Just (BlockStatement [])))))
+        parse statement "" "if ((a + b) * 4 == 45) {} else if (denis() == true) {} else {}" `shouldParse` (IfStatement (BinaryExpression (FoldedExpression (BinaryExpression (IdentifierExpression "a") (Operator Arithmetic Binary "+") (IdentifierExpression "b"))) (Operator Arithmetic Binary "*") (BinaryExpression (LiteralExpression (Integral 4)) (Operator Comparison Binary "==") (LiteralExpression (Integral 45)))) (BlockStatement []) (Just (IfStatement (BinaryExpression (CallExpression $ Call "denis" []) (Operator Comparison Binary "==") (LiteralExpression (Boolean True))) (BlockStatement []) (Just (BlockStatement [])))))
     it "if (a + b) a;}" $
         parse statement "" "if (a + b) a;}" `shouldFailWith` errFancy 11 (fancy $ ErrorFail "expected '{'")
     it "if (a + b {a;}" $
@@ -449,13 +453,13 @@ returnStatementTest = do
     it "return a;" $
         parse statement "" "return a;" `shouldParse` (ReturnStatement (Just $ IdentifierExpression "a"))
     it "return abc(45);" $
-        parse statement "" "return abc(45);" `shouldParse` (ReturnStatement (Just $ CallExpression $ Call "abc" [(LiteralExpression (Number 45))]))
+        parse statement "" "return abc(45);" `shouldParse` (ReturnStatement (Just $ CallExpression $ Call "abc" [(LiteralExpression (Integral 45))]))
     it "return;" $
         parse statement "" "return;" `shouldParse` (ReturnStatement Nothing)
     it "return a + b;" $
         parse statement "" "return a + b;" `shouldParse` (ReturnStatement (Just $ BinaryExpression (IdentifierExpression "a") (Operator Arithmetic Binary "+") (IdentifierExpression "b")))
     it "return (a + b) * 4;" $
-        parse statement "" "return (a + b) * 4;" `shouldParse` (ReturnStatement (Just $ BinaryExpression (FoldedExpression (BinaryExpression (IdentifierExpression "a") (Operator Arithmetic Binary "+") (IdentifierExpression "b"))) (Operator Arithmetic Binary "*") (LiteralExpression (Number 4))))
+        parse statement "" "return (a + b) * 4;" `shouldParse` (ReturnStatement (Just $ BinaryExpression (FoldedExpression (BinaryExpression (IdentifierExpression "a") (Operator Arithmetic Binary "+") (IdentifierExpression "b"))) (Operator Arithmetic Binary "*") (LiteralExpression (Integral 4))))
     it "return a + b" $
         parse statement "" "return a + b" `shouldFailWith` errFancy 12 (fancy $ ErrorFail "expected ';'")
     it "return a+;" $
@@ -491,7 +495,7 @@ ravenTest = do
     it "just main" $
         parse ravenParser "" "Integer main() {}" `shouldParse` [(FunctionDeclaration "Integer" "main" [] (BlockStatement []))]
     it "double function" $
-        parse ravenParser "" "Integer main(Integer a) {return double(4);} Integer double(Integer a) {return a * 2;}" `shouldParse` [(FunctionDeclaration "Integer" "main" [("Integer", "a")] (BlockStatement [(ReturnStatement (Just $ CallExpression (Call "double" [(LiteralExpression (Number 4.0))])))])), (FunctionDeclaration "Integer" "double" [("Integer", "a")] (BlockStatement [(ReturnStatement (Just $ BinaryExpression (IdentifierExpression "a") (Operator Arithmetic Binary "*") (LiteralExpression (Number 2.0))))]))]
+        parse ravenParser "" "Integer main(Integer a) {return double(4);} Integer double(Integer a) {return a * 2;}" `shouldParse` [(FunctionDeclaration "Integer" "main" [("Integer", "a")] (BlockStatement [(ReturnStatement (Just $ CallExpression (Call "double" [(LiteralExpression (Integral 4))])))])), (FunctionDeclaration "Integer" "double" [("Integer", "a")] (BlockStatement [(ReturnStatement (Just $ BinaryExpression (IdentifierExpression "a") (Operator Arithmetic Binary "*") (LiteralExpression (Integral 2))))]))]
 
 main :: IO ()
 main = hspec $

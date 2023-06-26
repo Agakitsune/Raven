@@ -28,6 +28,7 @@ clean:
 
 fclean: clean
 	rm -f $(NAME)
+	rm -f ravenc-test
 
 re: fclean all
 
@@ -36,6 +37,6 @@ syntax: $(HS_SRC)
 	$(HSCC) `find src/haskell -name "*.o"` Main.o -o $(NAME) -package megaparsec
 
 syntax-test: $(HS_SRC)
-	$(HSCC) -c $(HS_SRC) -package megaparsec -package hspec -package hspec-megaparsec
+	$(HSCC) -c $(HS_SRC) src/haskell/tests/Test.hs -package megaparsec -package hspec -package hspec-megaparsec
 	$(HSCC) `find src/haskell -name "*.o"` -o $(NAME)-test -package megaparsec -package hspec -package hspec-megaparsec
 	./$(NAME)-test
