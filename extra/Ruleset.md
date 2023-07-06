@@ -16,27 +16,23 @@ The literal byte depends on the literal
 | Number | 00 |
 | String | 01 |
 | Boolean | 02 |
+| Character | 03 |
+| Null | 04 |
 
 **Number**
 
 Number are written with the following rule:  
 | Byte | Description                    |
 | ---- |:------------------------------:|
-| 1    | How many bytes the number uses |
-| 1    | If the number is signed or not |
-| ?    | The actual number written with the OS endianness |
+| 8    | The actual number written in big endian |
 
 ```c
 /*
-** 42: 01   01   2a
-**     ^^   ^^   ^^
-**     |    |    +- 0x2a = 42
-**     |    +------ The number is unsigned
-**     +----------- The number take only one byte
+** 42: 2a 00 00 00 00 00 00 00
+**     ^^
+**     +- 0x2a = 42
 */
 ```
-
-> Character is a number
 
 ___
 
@@ -66,6 +62,34 @@ Boolean are written with the following rule:
 ** false: 00
 */
 ```
+___
+
+**Character**
+
+Character are written with the following rule:
+| Byte | Description              |
+| ---- |:------------------------:|
+| 1    | The value of the character |
+
+```c
+/*
+** 'a': 61
+** '€': E2 82 AC
+*/
+```
+
+___
+
+**Null Literal**
+
+Null Literal have no payload, just the type
+
+```c
+/*
+** null: 04
+*/
+```
+
 ___
 
 ### Identifier
@@ -149,6 +173,20 @@ The operation byte depends on the operation
 | -- (postfix) | 19 |
 | ++ (prefix) | 1A |
 | -- (prefix) | 1B |
+| = | 1C |
+| += | 1D |
+| -= | 1E |
+| *= | 1F |
+| /= | 20 |
+| %= | 21 |
+| **= | 22 |
+| &= | 23 |
+| \|= | 24 |
+| ^= | 25 |
+| >>= | 26 |
+| <<= | 27 |
+| >>>= | 28 |
+| <<<= | 29 |
 
 ___
 
@@ -169,6 +207,9 @@ The expression byte depends on the expression
 | Identifier | 01 |
 | Operation | 02 |
 | Function Call | 03 |
+| Fold Expression | 04 |
+
+> Fold Expression is just when an expression is between parenthesis, this is to handle operator precedence
 
 ___
 
@@ -447,6 +488,40 @@ while (a < 42) {
 ```
 ___
 
+### Return Statement
+
+> Return Statement is an expression that is returned by a function
+
+```c
+int display(char a) {
+    return a;
+}
+
+/* the expression is 'a'
+*/
+```
+
+Return Statement are written with the following rule:
+| Byte | Description                    |
+| ---- |:------------------------------:|
+| 1    | If there is an expression      |
+| ?    | The expression of the return statement (expression) |
+
+```c
+int display(char a) {
+    return a;
+}
+
+/*
+** 01   01    61 00
+** |    |     a  \0
+** |    +--- identifier expression
+** +--- there is an expression
+*/
+```
+
+___
+
 ### Statement
 
 > A statement is either a variable declaration, a variable assignment, a function call, an if statement or a while statement
@@ -460,11 +535,12 @@ Statement are written with the following rule:
 The statement byte depends on the statement
 | Statement | Byte |
 |:---------:| ---- |
-| Variable Declaration | 00 |
-| Variable Assignment | 01 |
-| Function Call | 02 |
+| Block | 00 |
+| Expression | 01 |
+| Declaration | 02 |
 | If Statement | 03 |
 | While Statement | 04 |
+| Return Statement | 05 |
 
 ___
 

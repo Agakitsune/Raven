@@ -81,7 +81,8 @@ expression = literal
                 | algebraic expression
                 | update expression
                 | conditional expression
-                | call expression ;
+                | call expression
+                | "(", expression , ")" ;
 
 variable declarator = "=" , whitespace , ( expression | conditional inline expression ) ;
 variable declaration = identifier , whitespace , identifier , [ variable declarator ] , whitespace , termination ;
