@@ -386,15 +386,15 @@ expressionStatementTest = do
 blockStatementTest :: SpecWith (Arg Expectation)
 blockStatementTest = do
     it "{}" $
-        parse statement "" "{}" `shouldParse` (BlockStatement [])
+        parse statement "" "{}" `shouldParse` (BlockStatement (Block []))
     it "{a;}" $
-        parse statement "" "{a;}" `shouldParse` (BlockStatement [(ExpressionStatement (IdentifierExpression "a"))])
+        parse statement "" "{a;}" `shouldParse` (BlockStatement (Block [(ExpressionStatement (IdentifierExpression "a"))]))
     it "{a; b;}" $
-        parse statement "" "{a; b;}" `shouldParse` (BlockStatement [(ExpressionStatement (IdentifierExpression "a")), (ExpressionStatement (IdentifierExpression "b"))])
+        parse statement "" "{a; b;}" `shouldParse` (BlockStatement (Block [(ExpressionStatement (IdentifierExpression "a")), (ExpressionStatement (IdentifierExpression "b"))]))
     it "{Integer a = 4; a = 4;   }" $
-        parse statement "" "{Integer a = 4; a = 4;   }" `shouldParse` (BlockStatement [(DeclarationStatement (VariableDeclaration "Integer" "a" (Just (LiteralExpression (Integral 4))))), (ExpressionStatement (BinaryExpression (IdentifierExpression "a") (Operator Assignment Binary "=") (LiteralExpression (Integral 4))))])
+        parse statement "" "{Integer a = 4; a = 4;   }" `shouldParse` (BlockStatement (Block [(DeclarationStatement (VariableDeclaration "Integer" "a" (Just (LiteralExpression (Integral 4))))), (ExpressionStatement (BinaryExpression (IdentifierExpression "a") (Operator Assignment Binary "=") (LiteralExpression (Integral 4))))]))
     it "{{a;}b;}" $
-        parse statement "" "{{a;}b;}" `shouldParse` (BlockStatement [(BlockStatement [(ExpressionStatement (IdentifierExpression "a"))]), (ExpressionStatement (IdentifierExpression "b"))])
+        parse statement "" "{{a;}b;}" `shouldParse` (BlockStatement (Block [(BlockStatement (Block [(ExpressionStatement (IdentifierExpression "a"))])), (ExpressionStatement (IdentifierExpression "b"))]))
     it "{Integer a = 4;" $
         parse statement "" "{Integer a = 4;" `shouldFailWith` errFancy 15 (fancy $ ErrorFail "expected '}'")
     it "Integer a = 4;}" $
@@ -409,13 +409,13 @@ blockStatementTest = do
 loopStatementTest :: SpecWith (Arg Expectation)
 loopStatementTest = do
     it "while (true) {a;}" $
-        parse statement "" "while (true) {a;}" `shouldParse` (LoopStatement (LiteralExpression (Boolean True)) $ BlockStatement [(ExpressionStatement (IdentifierExpression "a"))])
+        parse statement "" "while (true) {a;}" `shouldParse` (LoopStatement (LiteralExpression (Boolean True)) $ Block [(ExpressionStatement (IdentifierExpression "a"))])
     it "while (true) {a; b;}" $
-        parse statement "" "while (true) {a; b;}" `shouldParse` (LoopStatement (LiteralExpression (Boolean True)) $ BlockStatement [(ExpressionStatement (IdentifierExpression "a")), (ExpressionStatement (IdentifierExpression "b"))])
+        parse statement "" "while (true) {a; b;}" `shouldParse` (LoopStatement (LiteralExpression (Boolean True)) $ Block [(ExpressionStatement (IdentifierExpression "a")), (ExpressionStatement (IdentifierExpression "b"))])
     it "while (a == b) {}" $
-        parse statement "" "while (a == b) {}" `shouldParse` (LoopStatement (BinaryExpression (IdentifierExpression "a") (Operator Comparison Binary "==") (IdentifierExpression "b")) $ BlockStatement [])
+        parse statement "" "while (a == b) {}" `shouldParse` (LoopStatement (BinaryExpression (IdentifierExpression "a") (Operator Comparison Binary "==") (IdentifierExpression "b")) $ Block [])
     it "while(a != b    )    {Integer c = a; a++;}" $
-        parse statement "" "while(a != b    )    {Integer c = a; a++;}" `shouldParse` (LoopStatement (BinaryExpression (IdentifierExpression "a") (Operator Comparison Binary "!=") (IdentifierExpression "b")) $ BlockStatement [(DeclarationStatement (VariableDeclaration "Integer" "c" (Just (IdentifierExpression "a")))), (ExpressionStatement (UnaryExpression (PrePostOperator True Update Unary "++") (IdentifierExpression "a")))])
+        parse statement "" "while(a != b    )    {Integer c = a; a++;}" `shouldParse` (LoopStatement (BinaryExpression (IdentifierExpression "a") (Operator Comparison Binary "!=") (IdentifierExpression "b")) $ Block [(DeclarationStatement (VariableDeclaration "Integer" "c" (Just (IdentifierExpression "a")))), (ExpressionStatement (UnaryExpression (PrePostOperator True Update Unary "++") (IdentifierExpression "a")))])
     it "while (a != b) {Integer c = a; a++;" $
         parse statement "" "while (a != b) {Integer c = a; a++;" `shouldFailWith` errFancy 35 (fancy $ ErrorFail "expected '}'")
     it "while (true) {a++}" $
@@ -430,13 +430,13 @@ loopStatementTest = do
 ifStatementTest :: SpecWith (Arg Expectation)
 ifStatementTest = do
     it "if (true) {}" $
-        parse statement "" "if (true) {}" `shouldParse` (IfStatement (LiteralExpression (Boolean True)) (BlockStatement []) Nothing)
+        parse statement "" "if (true) {}" `shouldParse` (IfStatement (LiteralExpression (Boolean True)) (Block []) Nothing)
     it "if (true) {a++;} else {b++;}" $
-        parse statement "" "if (true) {a++;} else {b++;}" `shouldParse` (IfStatement (LiteralExpression (Boolean True)) (BlockStatement [(ExpressionStatement (UnaryExpression (PrePostOperator True Update Unary "++") (IdentifierExpression "a")))]) (Just (BlockStatement [(ExpressionStatement (UnaryExpression (PrePostOperator True Update Unary "++") (IdentifierExpression "b")))])))
+        parse statement "" "if (true) {a++;} else {b++;}" `shouldParse` (IfStatement (LiteralExpression (Boolean True)) (Block [(ExpressionStatement (UnaryExpression (PrePostOperator True Update Unary "++") (IdentifierExpression "a")))]) (Just (Left $ Block [(ExpressionStatement (UnaryExpression (PrePostOperator True Update Unary "++") (IdentifierExpression "b")))])))
     it "if (true) {a;} else if (b) {b;}" $
-        parse statement "" "if (true) {a;} else if (b) {b;}" `shouldParse` (IfStatement (LiteralExpression (Boolean True)) (BlockStatement [(ExpressionStatement (IdentifierExpression "a"))]) (Just (IfStatement (IdentifierExpression "b") (BlockStatement [(ExpressionStatement (IdentifierExpression "b"))]) Nothing)))
+        parse statement "" "if (true) {a;} else if (b) {b;}" `shouldParse` (IfStatement (LiteralExpression (Boolean True)) (Block [(ExpressionStatement (IdentifierExpression "a"))]) (Just (Right $ IfStatement (IdentifierExpression "b") (Block [(ExpressionStatement (IdentifierExpression "b"))]) Nothing)))
     it "if ((a + b) * 4 == 45) {} else if (denis() == true) {} else {}" $
-        parse statement "" "if ((a + b) * 4 == 45) {} else if (denis() == true) {} else {}" `shouldParse` (IfStatement (BinaryExpression (FoldedExpression (BinaryExpression (IdentifierExpression "a") (Operator Arithmetic Binary "+") (IdentifierExpression "b"))) (Operator Arithmetic Binary "*") (BinaryExpression (LiteralExpression (Integral 4)) (Operator Comparison Binary "==") (LiteralExpression (Integral 45)))) (BlockStatement []) (Just (IfStatement (BinaryExpression (CallExpression $ Call "denis" []) (Operator Comparison Binary "==") (LiteralExpression (Boolean True))) (BlockStatement []) (Just (BlockStatement [])))))
+        parse statement "" "if ((a + b) * 4 == 45) {} else if (denis() == true) {} else {}" `shouldParse` (IfStatement (BinaryExpression (FoldedExpression (BinaryExpression (IdentifierExpression "a") (Operator Arithmetic Binary "+") (IdentifierExpression "b"))) (Operator Arithmetic Binary "*") (BinaryExpression (LiteralExpression (Integral 4)) (Operator Comparison Binary "==") (LiteralExpression (Integral 45)))) (Block []) (Just (Right $ IfStatement (BinaryExpression (CallExpression $ Call "denis" []) (Operator Comparison Binary "==") (LiteralExpression (Boolean True))) (Block []) (Just (Left $ Block [])))))
     it "if (a + b) a;}" $
         parse statement "" "if (a + b) a;}" `shouldFailWith` errFancy 11 (fancy $ ErrorFail "expected '{'")
     it "if (a + b {a;}" $
@@ -470,9 +470,11 @@ returnStatementTest = do
 functionDeclarationTest :: SpecWith (Arg Expectation)
 functionDeclarationTest = do
     it "Integer main(Integer a) {}" $
-        parse functionDeclaration "" "Integer main(Integer a) {}" `shouldParse` (FunctionDeclaration "Integer" "main" [("Integer", "a")] (BlockStatement []))
+        parse functionDeclaration "" "Integer main(Integer a) {}" `shouldParse` (FunctionDeclaration "Integer" "main" [("Integer", "a")] (Block []))
+    it "Integer main(Integer a) {return;}" $
+        parse functionDeclaration "" "Integer main(Integer a) {return;}" `shouldParse` (FunctionDeclaration "Integer" "main" [("Integer", "a")] (Block [ReturnStatement Nothing]))
     it "Integer main(Integer a, String b) {a++; return a;}" $
-        parse functionDeclaration "" "Integer main(Integer a, String b) {a++; return a;}" `shouldParse` (FunctionDeclaration "Integer" "main" [("Integer", "a"), ("String", "b")] (BlockStatement [(ExpressionStatement (UnaryExpression (PrePostOperator True Update Unary "++") (IdentifierExpression "a"))), (ReturnStatement (Just (IdentifierExpression "a")))]))
+        parse functionDeclaration "" "Integer main(Integer a, String b) {a++; return a;}" `shouldParse` (FunctionDeclaration "Integer" "main" [("Integer", "a"), ("String", "b")] (Block [(ExpressionStatement (UnaryExpression (PrePostOperator True Update Unary "++") (IdentifierExpression "a"))), (ReturnStatement (Just (IdentifierExpression "a")))]))
     it "Integer () {}" $
         parse functionDeclaration "" "Integer () {}" `shouldFailWith` errFancy 8 (fancy $ ErrorFail "expected identifier")
     it "Integer main) {}" $
@@ -493,9 +495,9 @@ ravenTest = do
     it "empty" $
         parse ravenParser "" "" `shouldParse` []
     it "just main" $
-        parse ravenParser "" "Integer main() {}" `shouldParse` [(FunctionDeclaration "Integer" "main" [] (BlockStatement []))]
+        parse ravenParser "" "Integer main() {}" `shouldParse` [(FunctionDeclaration "Integer" "main" [] (Block []))]
     it "double function" $
-        parse ravenParser "" "Integer main(Integer a) {return double(4);} Integer double(Integer a) {return a * 2;}" `shouldParse` [(FunctionDeclaration "Integer" "main" [("Integer", "a")] (BlockStatement [(ReturnStatement (Just $ CallExpression (Call "double" [(LiteralExpression (Integral 4))])))])), (FunctionDeclaration "Integer" "double" [("Integer", "a")] (BlockStatement [(ReturnStatement (Just $ BinaryExpression (IdentifierExpression "a") (Operator Arithmetic Binary "*") (LiteralExpression (Integral 2))))]))]
+        parse ravenParser "" "Integer main(Integer a) {return double(4);} Integer double(Integer a) {return a * 2;}" `shouldParse` [(FunctionDeclaration "Integer" "main" [("Integer", "a")] (Block [(ReturnStatement (Just $ CallExpression (Call "double" [(LiteralExpression (Integral 4))])))])), (FunctionDeclaration "Integer" "double" [("Integer", "a")] (Block [(ReturnStatement (Just $ BinaryExpression (IdentifierExpression "a") (Operator Arithmetic Binary "*") (LiteralExpression (Integral 2))))]))]
 
 main :: IO ()
 main = hspec $

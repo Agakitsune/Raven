@@ -1,14 +1,10 @@
-Integer main() {
-    Integer said = 3;
-    Character kew = 'a';
-    if (said < 4) {
-        said = 4;
+Integer main(Integer a, String[] argv) {
+    if (a == 3) {
+        println("Into if");
+    } else if (a == 2) {
+        println("Into alternate if");
     } else {
-        said = 5;
+        println("Into else");
     }
-    {
-        said++;
-    }
-    said++;
-    return said;
+    return 0;
 }

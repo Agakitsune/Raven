@@ -24,13 +24,21 @@ The literal byte depends on the literal
 Number are written with the following rule:  
 | Byte | Description                    |
 | ---- |:------------------------------:|
+| 1    | The type of the number         |
 | 8    | The actual number written in big endian |
+
+The type of the number byte depends on the type of the number
+| Type | Byte |
+|:----:| ---- |
+| int | 00 |
+| float | 01 |
 
 ```c
 /*
-** 42: 2a 00 00 00 00 00 00 00
-**     ^^
-**     +- 0x2a = 42
+** 42: 00 2a 00 00 00 00 00 00 00
+**     |  ^^
+**     |  +- 0x2a = 42
+**     +---- 0x00 = int
 */
 ```
 
@@ -69,12 +77,13 @@ ___
 Character are written with the following rule:
 | Byte | Description              |
 | ---- |:------------------------:|
-| 1    | The value of the character |
+| 1    | The length of the character |
+| ?    | The value of the character |
 
 ```c
 /*
-** 'a': 61
-** '€': E2 82 AC
+** 'a': 01   61
+** '€': 03   E2 82 AC
 */
 ```
 

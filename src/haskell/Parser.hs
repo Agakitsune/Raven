@@ -6,6 +6,7 @@
 module Parser where
 
 import Foreign.C.String (CString, peekCAString)
+import Foreign.Ptr (nullPtr)
 import Text.Megaparsec
 import Text.Megaparsec.Char (string, space1, newline)
 import Text.Megaparsec.Char.Lexer
@@ -18,17 +19,23 @@ import Data.Void
 import Data.Char (isAlpha, isAlphaNum, isDigit, isOctDigit, isHexDigit)
 import Data.List
 import Data.Tuple (swap)
-import Data.Set (Set, singleton)
+import Data.Set (Set, singleton, size)
+-- import Data.String (fromString)
 
 import GHC.Int (Int64)
-import Data.ByteString (useAsCString)
+import Data.ByteString (useAsCString, length)
 import Data.ByteString.Lazy (ByteString, putStr, toStrict)
+import qualified Data.ByteString.UTF8 as UTF8
 import Data.ByteString.Lazy.UTF8 (fromString)
 import Data.Binary.Put
 import Data.Word
 
 import System.Environment
 import Data.Text.IO
+import System.IO (hPutStrLn, stderr)
+
+utf8Len :: Char -> Word8
+utf8Len = UTF8.fromString . pure >>> Data.ByteString.length >>> fromIntegral
 
 class RavenSerialize a where
      serialize :: a -> ByteString
@@ -62,16 +69,21 @@ data Expression = BinaryExpression Expression Operator Expression
                 | IdentifierExpression String
                 | LiteralExpression Literal
                 | FoldedExpression Expression
+                | IndexExpression String Expression
+                | ArrayExpression [Expression]
           deriving (Eq)
 
 data Declaration = VariableDeclaration String String (Maybe Expression)
-                 | FunctionDeclaration String String [(String, String)] Statement
+                 | FunctionDeclaration String String [(String, String)] Block
           deriving (Eq)
 
-data Statement = BlockStatement [Statement]
+data Block = Block [Statement]
+          deriving (Eq)
+
+data Statement = BlockStatement Block
                | ExpressionStatement Expression
-               | LoopStatement Expression Statement
-               | IfStatement Expression Statement (Maybe Statement)
+               | LoopStatement Expression Block
+               | IfStatement Expression Block (Maybe (Either Block Statement))
                | DeclarationStatement Declaration
                | ReturnStatement (Maybe Expression)
           deriving (Eq)
@@ -107,18 +119,24 @@ instance Show Expression where
      show (IdentifierExpression i) = "IdentifierExpression " ++ i
      show (LiteralExpression l) = "LiteralExpression " ++ show l
      show (FoldedExpression e) = "(" ++ show e ++ ")"
+     show (IndexExpression n e) = n ++ "[" ++ show e ++ "]"
+     show (ArrayExpression l) = "[" ++ intercalate ", " (map show l) ++ "]"
 
 instance Show Declaration where
      show (VariableDeclaration t n Nothing) = "Variable Declaration " ++ t ++ " " ++ n
      show (VariableDeclaration t n (Just e)) = "Variable Declaration " ++ t ++ " " ++ n ++ " = " ++ show e
      show (FunctionDeclaration t n args blk) = "Function Declaration " ++ t ++ " " ++ n ++ "(" ++ intercalate ", " (map (\(ta,na) -> ta ++ " " ++ na) args) ++ ") " ++ show blk
 
+instance Show Block where
+     show (Block lst) = "{\n" ++ intercalate "\n" (map show lst) ++ "\n}"
+
 instance Show Statement where
-     show (BlockStatement lst) = "{\n" ++ intercalate "\n" (map show lst) ++ "\n}"
+     show (BlockStatement blk) = show blk
      show (ExpressionStatement e) = show e ++ ";"
      show (LoopStatement e blk) = "While(" ++ show e ++ ") " ++ show blk
      show (IfStatement e blk Nothing) = "If(" ++ show e ++ ") " ++ show blk
-     show (IfStatement e blk (Just s)) = "If(" ++ show e ++ ") " ++ show blk ++ " else " ++ show s
+     show (IfStatement e blk (Just (Left eblk))) = "If(" ++ show e ++ ") " ++ show blk ++ " else " ++ show eblk
+     show (IfStatement e blk (Just (Right i))) = "If(" ++ show e ++ ") " ++ show blk ++ " else " ++ show i
      show (DeclarationStatement s) = show s
      show (ReturnStatement Nothing) = "Return"
      show (ReturnStatement (Just e)) = "Return " ++ show e
@@ -127,12 +145,12 @@ instance RavenSerialize String where
      serialize s = fromString s <> fromString "\0"
 
 instance RavenSerialize Literal where
-     serialize (Floating d) = runPut $ putWord8 0 <> putDoublebe d
-     serialize (Integral i) = runPut $ putWord8 0 <> putInt64be i
-     serialize (String s) = fromString "\0" <> serialize s
+     serialize (Floating d) = runPut $ putWord8 0 <> putWord8 1 <> putDoublebe d
+     serialize (Integral i) = runPut $ putWord8 0 <> putWord8 0 <> putInt64be i
+     serialize (String s) = runPut (putWord8 1) <> serialize s
      serialize (Boolean True) = runPut $ putWord8 2 <> putWord8 1
      serialize (Boolean False) = runPut $ putWord8 2 <> putWord8 0
-     serialize (Character c) = runPut (putWord8 3) <> fromString [c]
+     serialize (Character c) = runPut (putWord8 3) <> runPut ((putWord8 . utf8Len) c) <> fromString [c]
      serialize (Null) = runPut $ putWord8 4
 
 instance RavenSerialize Operator where
@@ -190,19 +208,24 @@ instance RavenSerialize Expression where
      serialize (UnaryExpression o e) = runPut (putWord8 2) <> serialize o <> serialize e
      serialize (CallExpression c) = runPut (putWord8 3) <> serialize c
      serialize (FoldedExpression e) = runPut (putWord8 4) <> serialize e
+     serialize (IndexExpression n e) = runPut (putWord8 5) <> serialize n <> serialize e
+     serialize (ArrayExpression l) = runPut (putWord8 6) <> runPut (putWord8 $ fromIntegral $ Data.List.length l) <> foldl (<>) (fromString "") (map serialize l)
 
 instance RavenSerialize Declaration where
      serialize (VariableDeclaration t n Nothing) = runPut (putWord8 0) <> serialize t <> serialize n <> runPut (putWord8 0)
      serialize (VariableDeclaration t n (Just e)) = runPut (putWord8 0) <> serialize t <> serialize n <> runPut (putWord8 1) <> serialize e
      serialize (FunctionDeclaration t n as blk) = runPut (putWord8 1) <> serialize t <> serialize n <> runPut (putWord8 $ fromIntegral $ Data.List.length as) <> foldl (<>) (fromString "") (map ((uncurry (<>)) . join (***) serialize) as) <> serialize blk
 
+instance RavenSerialize Block where
+     serialize (Block lst) = runPut (putWord8 10) <> foldl (<>) (fromString "") (map serialize lst) <> runPut (putWord8 10)
+
 instance RavenSerialize Statement where
-     serialize (BlockStatement lst) = runPut (putWord8 0) <> runPut (putWord8 10) <> foldl (<>) (fromString "") (map serialize lst) <> runPut (putWord8 10)
+     serialize (BlockStatement blk) = runPut (putWord8 0) <> serialize blk
      serialize (ExpressionStatement e) = runPut (putWord8 1) <> serialize e
      serialize (DeclarationStatement dlcr) = runPut (putWord8 2) <> serialize dlcr
      serialize (IfStatement e blk Nothing) = runPut (putWord8 3) <> serialize e <> serialize blk <> runPut (putWord8 0)
-     serialize (IfStatement e blk (Just opt@(IfStatement _ _ _))) = runPut (putWord8 3) <> serialize e <> serialize blk <> runPut (putWord8 1) <> runPut (putWord8 1) <> serialize opt
-     serialize (IfStatement e blk (Just opt@(BlockStatement _))) = runPut (putWord8 3) <> serialize e <> serialize blk <> runPut (putWord8 1) <> runPut (putWord8 0) <> serialize opt
+     serialize (IfStatement e blk (Just (Right (opt@(IfStatement _ _ _))))) = runPut (putWord8 3) <> serialize e <> serialize blk <> runPut (putWord8 1) <> runPut (putWord8 1) <> serialize opt
+     serialize (IfStatement e blk (Just (Left eblk))) = runPut (putWord8 3) <> serialize e <> serialize blk <> runPut (putWord8 1) <> runPut (putWord8 0) <> serialize eblk
      serialize (LoopStatement e blk) = runPut (putWord8 4) <> serialize e <> serialize blk
      serialize (ReturnStatement Nothing) = runPut (putWord8 5) <> runPut (putWord8 0)
      serialize (ReturnStatement (Just e)) = runPut (putWord8 5) <> runPut (putWord8 1) <> serialize e
@@ -279,13 +302,26 @@ keyword s = do
           (Left _) -> setOffset o *> fail ("expected '" ++ s ++ "' keyword")
           (Right k) -> pure k
 
+
 bundledType :: Parser String
 bundledType = do
      o <- getOffset
      r <- whitespace *> identifier' <* whitespace
      if r `elem` bundledTypeList
-          then pure r
+          then arrayType r
           else setOffset o *> fail "expected type"
+
+arrayType :: String -> Parser String
+arrayType str = do
+     r <- observing $ whitespace *> single '['
+     case r of
+          (Left _) -> pure str
+          (Right _) -> do
+               o <- getOffset
+               r <- observing $ whitespace *> single ']'
+               case r of
+                    (Left _) -> setOffset o *> fail "expected ']'"
+                    (Right _) -> arrayType $ str ++ "[]"
 
 notKeyword :: Parser String -> Parser String
 notKeyword p = do
@@ -449,11 +485,45 @@ callExpression = do
                                         (Left _) -> fail "expected ')'"
                                         (Right _) -> pure $ CallExpression $ Call id args
 
+indexExpression :: Parser Expression
+indexExpression = do
+     id <- observing $ identifier <* whitespace
+     case id of
+          (Left _) -> fail "expected identifier"
+          (Right id) -> do
+               r <- observing $ single '[' <* whitespace
+               case r of
+                    (Left _) -> fail "expected '['"
+                    (Right _) -> do
+                         exp <- observing $ expression <* whitespace
+                         case exp of
+                              (Left (FancyError i s)) -> setOffset i *> fancyFailure s
+                              (Right idx) -> do
+                                   r <- observing $ single ']'
+                                   case r of
+                                        (Left _) -> fail "expected ']'"
+                                        (Right _) -> pure $ IndexExpression id idx
+
+arrayExpression :: Parser Expression
+arrayExpression = do
+     r <- observing $ single '[' <* whitespace
+     case r of
+          (Left _) -> fail "expected '['"
+          (Right _) -> do
+               values <- observing $ sepBy expression (single ',') <* whitespace
+               case values of
+                    (Left (FancyError i s)) -> setOffset i *> fancyFailure s
+                    (Right values) -> do
+                         r <- observing $ single ']'
+                         case r of
+                              (Left _) -> fail "expected ']'"
+                              (Right _) -> pure $ ArrayExpression values
+
 -- leafExpression :: Parser Expression
 -- leafExpression = try (dbg "leaf fold" $ foldExpression) <|> try (dbg "leaf call" $ callExpression) <|> (dbg "leaf literal" $ LiteralExpression <$> literal) <|> (dbg "leaf id" $ identifierExpression)
 
 leafExpression :: Parser Expression
-leafExpression = try foldExpression <|> try callExpression <|> (LiteralExpression <$> literal) <|> (identifierExpression <* whitespace <* notFollowedBy (single '('))
+leafExpression = try foldExpression <|> try callExpression <|> try indexExpression <|> try arrayExpression <|> (LiteralExpression <$> literal) <|> (identifierExpression <* whitespace <* notFollowedBy (single '('))
 
 unaryExpression :: Parser Expression
 unaryExpression = UnaryExpression <$> unaryOperator <* whitespace <*> leafExpression
@@ -504,15 +574,15 @@ expression = do
                term <- observing $ (whitespace *> (lookAhead $ single ';'))
                case term of
                     (Right _) -> fail "expected expression"
-                    (Left _) -> setOffset i *> fancyFailure s
+                    (Left _) -> do
+                         if size s == 1
+                         then setOffset i *> fancyFailure s
+                         else setOffset i *> fail "invalid expression"
           (Right e) -> pure e
 
 
-expressionStatement :: Parser Statement
-expressionStatement = ExpressionStatement <$> (expression <* whitespace <* termination)
-
-blockStatement :: Parser Statement
-blockStatement = do
+block :: Parser Block
+block = do
      r <- observing $ single '{' <* whitespace
      case r of
           (Left _) -> fail "expected '{'"
@@ -521,7 +591,13 @@ blockStatement = do
                case blk of
                     (Left (FancyError i s)) -> setOffset i *> fancyFailure s
                     (Left (TrivialError i s u)) -> setOffset i *> failure s u
-                    (Right blk) -> do pure $ BlockStatement blk
+                    (Right blk) -> do pure $ Block blk
+
+expressionStatement :: Parser Statement
+expressionStatement = ExpressionStatement <$> (expression <* whitespace <* termination)
+
+blockStatement :: Parser Statement
+blockStatement = BlockStatement <$> block
 
 inlineBlockParser :: Parser Statement
 inlineBlockParser = do
@@ -622,12 +698,39 @@ statement' inBlk = do
                                                                       else do setOffset o *> fail "expected '{'"
                                                             (Left (FancyError i s)) -> setOffset i *> fancyFailure s
                                                             (Left (TrivialError i s u)) -> setOffset i *> failure s u
+                                        (Left (TrivialError i s u)) -> do
+                                             ret <- setInput input *> observing returnStatement
+                                             case ret of
+                                                  (Right ret) -> do
+                                                       r <- observing $ whitespace *> (lookAhead $ single '}')
+                                                       case r of
+                                                            (Left _) -> pure ret
+                                                            (Right _) -> do
+                                                            if inBlk
+                                                            then do pure ret
+                                                            else do setOffset o *> fail "expected '{'"
+                                                  (Left (FancyError i s)) -> do
+                                                       if (s /= (singleton (ErrorFail "expected 'return' keyword")))
+                                                       then do setOffset i *> fancyFailure s
+                                                       else do
+                                                       exp <- setInput input *> observing expressionStatement
+                                                       case exp of
+                                                            (Right exp) -> do
+                                                                 r <- observing $ whitespace *> (lookAhead $ single '}')
+                                                                 case r of
+                                                                      (Left _) -> pure exp
+                                                                      (Right _) -> do
+                                                                      if inBlk
+                                                                      then do pure exp
+                                                                      else do setOffset o *> fail "expected '{'"
+                                                            (Left (FancyError i s)) -> setOffset i *> fancyFailure s
+                                                            (Left (TrivialError i s u)) -> setOffset i *> failure s u
 
 statement :: Parser Statement
 statement = statement' False
 
 loopStatement :: Parser Statement
-loopStatement = LoopStatement <$> (keyword "while" *> inlineExpression <* whitespace) <*> blockStatement
+loopStatement = LoopStatement <$> (keyword "while" *> inlineExpression <* whitespace) <*> block
 
 ifStatement :: Parser Statement
 ifStatement = do
@@ -639,7 +742,7 @@ ifStatement = do
                case expr of
                     (Left (FancyError i s)) -> setOffset i *> fancyFailure s
                     (Right expr) -> do
-                         blk <- observing $ blockStatement
+                         blk <- observing $ block
                          case blk of
                               (Left (FancyError i s)) -> setOffset i *> fancyFailure s
                               (Right blk) -> do
@@ -653,12 +756,12 @@ ifStatement = do
                                                        if (s /= (singleton (ErrorFail "expected 'if' keyword")))
                                                        then do setOffset i *> fancyFailure s
                                                        else do
-                                                            blkee <- observing $ blockStatement
+                                                            blkee <- observing $ block
                                                             case blkee of
-                                                                 (Right blkee) -> pure $ IfStatement expr blk (Just blkee)
+                                                                 (Right blkee) -> pure $ IfStatement expr blk (Just (Left blkee))
                                                                  (Left (FancyError i s)) -> setOffset i *> fancyFailure s
                                                                  (Left (TrivialError i s u)) -> setOffset i *> failure s u
-                                                  (Right ifee) -> pure $ IfStatement expr blk (Just ifee)
+                                                  (Right ifee) -> pure $ IfStatement expr blk (Just (Right ifee))
 
 returnStatement :: Parser Statement
 returnStatement = do
@@ -671,7 +774,7 @@ returnStatement = do
                case expr of
                     (Left (FancyError i s)) -> do
                          if (i == off)
-                         then do pure $ ReturnStatement Nothing
+                         then do (pure $ ReturnStatement Nothing) <* termination
                          else do setOffset i *> fancyFailure s
                     (Right expr) -> do
                          term <- observing $ whitespace *> termination
@@ -698,9 +801,10 @@ variableDeclarator = do
 
 variableDeclaration :: Parser Declaration
 variableDeclaration = do
-     btype <- observing bundledType
+     btype <- observing $ bundledType <* whitespace
      case btype of
-          (Left _) -> fail "expected type"
+          (Left (TrivialError i s u)) -> setOffset i *> failure s u
+          (Left (FancyError i s)) -> setOffset i *> fancyFailure s
           (Right btype) -> do
                name <- observing identifier
                case name of
@@ -712,7 +816,7 @@ variableDeclarationStatement = DeclarationStatement <$> (variableDeclaration <* 
 
 functionArg :: Parser (String, String)
 functionArg = do
-     btype <- observing bundledType
+     btype <- observing $ bundledType <* whitespace
      case btype of
           (Left _) -> fail "expected type"
           (Right btype) -> do
@@ -744,22 +848,15 @@ functionDeclaration = do
                                              case r of
                                                   (Left _) -> fail "expected ')'"
                                                   (Right _) -> do
-                                                       blk <- observing $ blockStatement
+                                                       blk <- observing $ block
                                                        case blk of
                                                             (Left (FancyError i s)) -> setOffset i *> fancyFailure s
+                                                            (Left (TrivialError i s u)) -> setOffset i *> failure s u
                                                             (Right blk) -> pure $ FunctionDeclaration btype id args blk
      -- FunctionDeclaration <$> bundledType <*> identifier <* whitespace <*> (between (single '(') (single ')')) (whitespace *> sepBy ((,) <$> bundledType <*> identifier) (single ',') <* whitespace) <* whitespace <*> blockStatement
 
 ravenParser :: Parser [Declaration]
-ravenParser = many (whitespace *> (functionDeclaration <|> (variableDeclaration <* whitespace <* termination)) <* whitespace) <* eof
-
-foreign export ccall ravenSerialize :: CString -> IO CString
-
-ravenSerialize :: CString -> IO CString
-ravenSerialize cfile = do
-     (peekCAString cfile >>= Data.Text.IO.readFile) >>= \dat -> case parse ravenParser "" dat of
-          (Left err) -> error $ errorBundlePretty err
-          (Right decls) -> useAsCString (toStrict $ foldl (<>) (fromString "") . map serialize $ decls) pure
+ravenParser = many (whitespace *> (try functionDeclaration <|> (variableDeclaration <* whitespace <* termination)) <* whitespace) <* eof
 
 serializeTest :: RavenSerialize a => a -> IO ()
 serializeTest a = Data.ByteString.Lazy.putStr $ serialize a
