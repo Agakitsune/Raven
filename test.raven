@@ -1,9 +1,12 @@
 Integer main(Integer a, String[] argv) {
     if (a == 3) {
+        Integer c = 2;
         println("Into if");
     } else if (a == 2) {
+        Integer c = 2;
         println("Into alternate if");
     } else {
+        Integer c = 2;
         println("Into else");
     }
     return 0;

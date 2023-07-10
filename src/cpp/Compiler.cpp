@@ -258,6 +258,8 @@ namespace raven {
                         return "Double";
                     case LiteralType::String:
                         return "String";
+                    case LiteralType::Boolean:
+                        return "Boolean";
                 }
                 break;
             case ExpressionType::ExpIdentifier:
@@ -288,6 +290,18 @@ namespace raven {
         if (!isIntegralType(type))
             throw exception::CompilerException("Cannot promote non-integral type");
         return reg.size > getRegisterSize(type);
+    }
+
+    void FunctionCompiler::destroyScope(const std::filesystem::path &scope) {
+        std::vector<std::string> toDelete;
+        for (auto &it : variables) {
+            if (it.first.starts_with(std::string(scope))) {
+                toDelete.push_back(it.first);
+            }
+        }
+        for (auto &it : toDelete) {
+            variables.erase(it);
+        }
     }
 
     std::vector<std::shared_ptr<ASM::Instruction>> FunctionCompiler::loadVariable(const std::string &name, ASM::Register reg) {
@@ -511,7 +525,8 @@ namespace raven {
                                                                     ASM::Register reg,
                                                                     const std::function<std::vector<std::shared_ptr<ASM::Instruction>>(ASM::Register, ASM::Register)> &classic,
                                                                     const std::function<std::vector<std::shared_ptr<ASM::Instruction>>(ASM::Register, const ASM::Immediate&)> &variant,
-                                                                    const std::function<long(long, long)> &optimize)
+                                                                    const std::function<long(long, long)> &optimize,
+                                                                    bool ignoreOptimize)
     {
         std::vector<std::shared_ptr<ASM::Instruction>> instructions;
         std::vector<std::shared_ptr<ASM::Instruction>> tmp;
@@ -552,9 +567,11 @@ namespace raven {
             longValue1 = static_cast<long>(lit1);
             longValue2 = static_cast<long>(lit2);
             longValue = optimize(longValue1, longValue2);
-            auto mov = std::make_shared<ASM::Mov>(reg, ASM::Immediate(longValue));
-            instructions.push_back(mov);
-            functionSize += mov->getSize();
+            if (!ignoreOptimize) {
+                auto mov = std::make_shared<ASM::Mov>(reg, ASM::Immediate(longValue));
+                instructions.push_back(mov);
+                functionSize += mov->getSize();
+            }
         } else if (exp2.getVariant() == ExpressionType::ExpLiteral) {
             lit2 = static_cast<Literal>(exp2);
             if (lit2.getVariant() == LiteralType::Integral) {
@@ -1201,6 +1218,317 @@ namespace raven {
         return instructions;
     }
 
+    std::vector<std::shared_ptr<ASM::Instruction>> FunctionCompiler::jmpExpression(const Expression &exp, bool &ignoreBase, bool &ignoreAlternate) {
+        std::vector<std::shared_ptr<ASM::Instruction>> instructions;
+        std::vector<std::shared_ptr<ASM::Instruction>> tmp;
+
+        if (exp.getVariant() == ExpressionType::ExpOperation) {
+            const Operation &op = static_cast<const Operation&>(exp);
+            switch (op.getType()) {
+                case OperationType::BinaryLogicalAnd:
+                    return generateOperation(
+                        op,
+                        ASM::RAX,
+                        [&](ASM::Register reg1, ASM::Register reg2) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            std::vector<std::shared_ptr<ASM::Instruction>> tmp = logicRegister(reg1, false);
+                            inst.insert(inst.end(), tmp.begin(), tmp.end());
+                            tmp = logicRegister(reg2, false);
+                            inst.insert(inst.end(), tmp.begin(), tmp.end());
+                            inst.push_back(std::make_shared<ASM::And>(reg1, reg2));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::NotEqual));
+                            return inst;
+                        },
+                        [&](ASM::Register reg1, const ASM::Immediate &imm) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            if (imm.getValue()) {
+                                inst.push_back(std::make_shared<ASM::And>(reg1, 1));
+                                inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::NotEqual));
+                                return inst;
+                            }
+                            ignoreBase = true;
+                            inst.push_back(std::make_shared<ASM::Mov>(reg1, 0));
+                            return inst;
+                        },
+                        [&](long longValue1, long longValue2) {
+                            if (longValue1 && longValue2)
+                                ignoreAlternate = true;
+                            else
+                                ignoreAlternate = false;
+                            return 0L;
+                        },
+                        true
+                    );
+                case OperationType::BinaryLogicalOr:
+                    return generateOperation(
+                        op,
+                        ASM::RAX,
+                        [&](ASM::Register reg1, ASM::Register reg2) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            std::vector<std::shared_ptr<ASM::Instruction>> tmp = logicRegister(reg1, false);
+                            inst.insert(inst.end(), tmp.begin(), tmp.end());
+                            tmp = logicRegister(reg2, false);
+                            inst.insert(inst.end(), tmp.begin(), tmp.end());
+                            inst.push_back(std::make_shared<ASM::Or>(reg1, reg2));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::NotEqual));
+                            return inst;
+                        },
+                        [&](ASM::Register reg1, const ASM::Immediate &imm) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            if (imm.getValue()) {
+                                ignoreAlternate = true;
+                                inst.push_back(std::make_shared<ASM::Mov>(reg1, 1));
+                            } else {
+                                inst.push_back(std::make_shared<ASM::Or>(reg1, 0));
+                                inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::NotEqual));
+                            }
+                            return inst;
+                        },
+                        [&](long longValue1, long longValue2) {
+                            if (longValue1 || longValue2)
+                                ignoreAlternate = true;
+                            else
+                                ignoreAlternate = false;
+                            return 0L;
+                        },
+                        true
+                    );
+                case OperationType::BinaryLogicalXor:
+                    return generateOperation(
+                        op,
+                        ASM::RAX,
+                        [&](ASM::Register reg1, ASM::Register reg2) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            std::vector<std::shared_ptr<ASM::Instruction>> tmp = logicRegister(reg1, false);
+                            inst.insert(inst.end(), tmp.begin(), tmp.end());
+                            tmp = logicRegister(reg2, false);
+                            inst.insert(inst.end(), tmp.begin(), tmp.end());
+                            inst.push_back(std::make_shared<ASM::Xor>(reg1, reg2));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::NotEqual));
+                            return inst;
+                        },
+                        [&](ASM::Register reg1, const ASM::Immediate &imm) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            std::vector<std::shared_ptr<ASM::Instruction>> tmp = logicRegister(reg1, false);
+                            inst.insert(inst.end(), tmp.begin(), tmp.end());
+                            if (imm.getValue())
+                                inst.push_back(std::make_shared<ASM::Xor>(reg1, 1));
+                            else
+                                inst.push_back(std::make_shared<ASM::Xor>(reg1, 0));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::NotEqual));
+                            return inst;
+                        },
+                        [&](long longValue1, long longValue2) {
+                            if ((!!longValue1) ^ (!!longValue2))
+                                ignoreAlternate = true;
+                            else
+                                ignoreAlternate = false;
+                            return 0L;
+                        },
+                        true
+                    );
+                case OperationType::BinaryLogicalEqual:
+                    return generateOperation(
+                        op,
+                        ASM::RAX,
+                        [&](ASM::Register reg1, ASM::Register reg2) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            inst.push_back(std::make_shared<ASM::Cmp>(reg1, reg2));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::NotEqual));
+                            return inst;
+                        },
+                        [&](ASM::Register reg1, const ASM::Immediate &imm) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            inst.push_back(std::make_shared<ASM::Cmp>(reg1, imm));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::NotEqual));
+                            return inst;
+                        },
+                        [&](long longValue1, long longValue2) {
+                            if (longValue1 == longValue2)
+                                ignoreAlternate = true;
+                            else
+                                ignoreAlternate = false;
+                            return 0L;
+                        },
+                        true
+                    );
+                case OperationType::BinaryLogicalNotEqual:
+                    return generateOperation(
+                        op,
+                        ASM::RAX,
+                        [&](ASM::Register reg1, ASM::Register reg2) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            inst.push_back(std::make_shared<ASM::Cmp>(reg1, reg2));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::Equal));
+                            return inst;
+                        },
+                        [&](ASM::Register reg1, const ASM::Immediate &imm) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            inst.push_back(std::make_shared<ASM::Cmp>(reg1, imm));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::Equal));
+                            return inst;
+                        },
+                        [&](long longValue1, long longValue2) {
+                            if (longValue1 != longValue2)
+                                ignoreAlternate = true;
+                            else
+                                ignoreAlternate = false;
+                            return 0L;
+                        },
+                        true
+                    );
+                case OperationType::BinaryLogicalLower:
+                    return generateOperation(
+                        op,
+                        ASM::RAX,
+                        [&](ASM::Register reg1, ASM::Register reg2) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            inst.push_back(std::make_shared<ASM::Cmp>(reg1, reg2));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::GreaterEqual));
+                            return inst;
+                        },
+                        [&](ASM::Register reg1, const ASM::Immediate &imm) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            inst.push_back(std::make_shared<ASM::Cmp>(reg1, imm));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::GreaterEqual));
+                            return inst;
+                        },
+                        [&](long longValue1, long longValue2) {
+                            if (longValue1 < longValue2)
+                                ignoreAlternate = true;
+                            else
+                                ignoreAlternate = false;
+                            return 0L;
+                        },
+                        true
+                    );
+                case OperationType::BinaryLogicalLowerEq:
+                    return generateOperation(
+                        op,
+                        ASM::RAX,
+                        [&](ASM::Register reg1, ASM::Register reg2) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            inst.push_back(std::make_shared<ASM::Cmp>(reg1, reg2));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::Greater));
+                            return inst;
+                        },
+                        [&](ASM::Register reg1, const ASM::Immediate &imm) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            inst.push_back(std::make_shared<ASM::Cmp>(reg1, imm));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::Greater));
+                            return inst;
+                        },
+                        [&](long longValue1, long longValue2) {
+                            if (longValue1 <= longValue2)
+                                ignoreAlternate = true;
+                            else
+                                ignoreAlternate = false;
+                            return 0L;
+                        },
+                        true
+                    );
+                case OperationType::BinaryLogicalGreater:
+                    return generateOperation(
+                        op,
+                        ASM::RAX,
+                        [&](ASM::Register reg1, ASM::Register reg2) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            inst.push_back(std::make_shared<ASM::Cmp>(reg1, reg2));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::LowerEqual));
+                            return inst;
+                        },
+                        [&](ASM::Register reg1, const ASM::Immediate &imm) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            inst.push_back(std::make_shared<ASM::Cmp>(reg1, imm));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::LowerEqual));
+                            return inst;
+                        },
+                        [&](long longValue1, long longValue2) {
+                            if (longValue1 > longValue2)
+                                ignoreAlternate = true;
+                            else
+                                ignoreAlternate = false;
+                            return 0L;
+                        },
+                        true
+                    );
+                case OperationType::BinaryLogicalGreaterEq:
+                    return generateOperation(
+                        op,
+                        ASM::RAX,
+                        [&](ASM::Register reg1, ASM::Register reg2) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            inst.push_back(std::make_shared<ASM::Cmp>(reg1, reg2));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::Lower));
+                            return inst;
+                        },
+                        [&](ASM::Register reg1, const ASM::Immediate &imm) {
+                            std::vector<std::shared_ptr<ASM::Instruction>> inst;
+                            inst.push_back(std::make_shared<ASM::Cmp>(reg1, imm));
+                            inst.push_back(std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::Lower));
+                            return inst;
+                        },
+                        [&](long longValue1, long longValue2) {
+                            if (longValue1 >= longValue2)
+                                ignoreAlternate = true;
+                            else
+                                ignoreAlternate = false;
+                            return 0L;
+                        },
+                        true
+                    );
+                default:
+                    tmp = loadOperation(op, ASM::RAX);
+                    instructions.insert(instructions.end(), tmp.begin(), tmp.end());
+                    break;
+
+            }
+        } else if (exp.getVariant() == ExpressionType::ExpLiteral) {
+            Literal lit = static_cast<Literal>(exp);
+            switch (lit.getVariant()) {
+                case LiteralType::Boolean:
+                    if (static_cast<bool>(lit))
+                        ignoreAlternate = true;
+                    else
+                        ignoreBase = true;
+                    return instructions;
+                case LiteralType::Floating:
+                    throw exception::CompilerException("floating value not supported");
+                case LiteralType::Character:
+                    if (static_cast<char32_t>(lit))
+                        ignoreAlternate = true;
+                    else
+                        ignoreBase = true;
+                    return instructions;
+                case LiteralType::Integral:
+                    if (static_cast<long>(lit))
+                        ignoreAlternate = true;
+                    else
+                        ignoreBase = true;
+                    return instructions;
+                case LiteralType::String:
+                    ignoreAlternate = true;
+                    return instructions;
+                case LiteralType::Null:
+                    ignoreBase = true;
+                    return instructions;
+            }
+        } else {
+            tmp = loadExpression(exp, ASM::RAX);
+            instructions.insert(instructions.end(), tmp.begin(), tmp.end());
+        }
+
+        auto cmp = std::make_shared<ASM::Cmp>(ASM::RAX, ASM::Immediate(0));
+        instructions.push_back(cmp);
+        functionSize += cmp->getSize();
+
+        auto je = std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::Equal);
+        instructions.push_back(je);
+        functionSize += je->getSize();
+
+        return instructions;
+    }
+
     std::vector<std::shared_ptr<ASM::Instruction>> FunctionCompiler::logicRegister(ASM::Register reg, bool _not) {
         std::vector<std::shared_ptr<ASM::Instruction>> instructions;
         std::vector<std::shared_ptr<ASM::Instruction>> tmp;
@@ -1518,48 +1846,74 @@ namespace raven {
         std::vector<std::shared_ptr<ASM::Instruction>> instructions;
         std::vector<std::shared_ptr<ASM::Instruction>> tmp;
         size_t blkSize = 0;
+        size_t diff = 0;
 
-        tmp = logicExpression(if_.getCondition(), ASM::RAX, false);
+        bool ifBase = false;
+        bool altBase = false;
+
+        ASM::Jmp *jump = nullptr;
+
+        tmp = jmpExpression(if_.getCondition(), ifBase, altBase);
         instructions.insert(instructions.end(), tmp.begin(), tmp.end());
 
-        auto cmp = std::make_shared<ASM::Cmp>(ASM::RAX, ASM::Immediate(0));
-        instructions.push_back(cmp);
-        functionSize += cmp->getSize();
-
-        auto je = std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32), ASM::Equal);
-        instructions.push_back(je);
-        functionSize += je->getSize();
         blkSize = functionSize;
 
-        tmp = handleBlock(if_.getBlock(), returnType, doesReturn);
-        instructions.insert(instructions.end(), tmp.begin(), tmp.end());
+        if (!ifBase && !altBase) {
+            jump = dynamic_cast<ASM::Jmp*>(instructions.back().get());
+        }
 
-        if (if_.hasAlternate()) {
+        if (!ifBase) {
+            scope = scope / ("main");
+            sizeStack.push(offset);
+            tmp = handleBlock(if_.getBlock(), returnType, doesReturn);
+            instructions.insert(instructions.end(), tmp.begin(), tmp.end());
+        }
+
+        if (ifBase)
+            log::warn << "main branch is never used" << log::endl;
+        if (altBase) {
+            alternateReturn = doesReturn;
+            log::warn << "alternate branch is never used" << log::endl;
+        }
+
+        if (if_.hasAlternate() && !altBase) {
             auto jalt = std::make_shared<ASM::Jmp>(ASM::Immediate(0).setSize(ASM::IMM32));
-            instructions.push_back(jalt);
-            functionSize += jalt->getSize();
+            if (!ifBase) {
+                instructions.push_back(jalt);
+                functionSize += jalt->getSize();
 
-            blkSize = functionSize - blkSize;
-            je->setValue(ASM::Immediate(blkSize).setSize(ASM::IMM32));
+                blkSize = functionSize - blkSize;
+                jump->setValue(ASM::Immediate(blkSize).setSize(ASM::IMM32));
 
-            blkSize = functionSize;
+                blkSize = functionSize;
+            }
+
 
             if (if_.alternateIndex() == 2) {
                 bool _1 = false;
                 bool _2 = false;
+                scope = scope / ("alternate");
                 tmp = handleIf(if_.getAlternate<If>(), returnType, _1, _2);
                 instructions.insert(instructions.end(), tmp.begin(), tmp.end());
                 alternateReturn = _1 && _2;
             } else {
+                scope = scope / ("alternate");
+                sizeStack.push(offset);
                 tmp = handleBlock(if_.getAlternate<Block>(), returnType, alternateReturn);
                 instructions.insert(instructions.end(), tmp.begin(), tmp.end());
             }
 
-            blkSize = functionSize - blkSize;
-            jalt->setValue(ASM::Immediate(blkSize).setSize(ASM::IMM32));
+            if (!ifBase) {
+                blkSize = functionSize - blkSize;
+                jalt->setValue(ASM::Immediate(blkSize).setSize(ASM::IMM32));
+            } else {
+                doesReturn = alternateReturn;
+            }
         } else {
-            blkSize = functionSize - blkSize;
-            je->setValue(ASM::Immediate(blkSize).setSize(ASM::IMM32));
+            if (!ifBase && !altBase) {
+                blkSize = functionSize - blkSize;
+                jump->setValue(ASM::Immediate(blkSize).setSize(ASM::IMM32));
+            }
         }
 
         return instructions;
@@ -1583,31 +1937,33 @@ namespace raven {
 
         // Prestack variables
 
-        for (auto &statement : block.getStatements()) {
-            std::string name;
-            std::string type;
-            Declaration decl;
-            switch (statement->getVariant()) {
-                case StatementType::Declaration:
-                    decl = static_cast<Declaration>(*statement.get());
-                    name = decl.getDeclaration().getName();
-                    type = decl.getDeclaration().getType();
-                    if (hasVariable(name))
-                        throw exception::CompilerException("Variable '" + name + "' already declared");
-                    if (decl.getDeclarationType() == DeclarationType::Function)
-                        throw exception::CompilerException("Cannot declare function in function");
-                    diff += sizeofType(type);
-                    variables[generateKey(scope, name)] = Variable{type, offset, nullptr, false};
-                    break;
+        if (!stackOverride) {
+            sizeStack.push(offset);
+            for (auto &statement : block.getStatements()) {
+                std::string name;
+                std::string type;
+                Declaration decl;
+                switch (statement->getVariant()) {
+                    case StatementType::Declaration:
+                        decl = static_cast<Declaration>(*statement.get());
+                        name = decl.getDeclaration().getName();
+                        type = decl.getDeclaration().getType();
+                        if (hasVariable(name))
+                            throw exception::CompilerException("Variable '" + name + "' already declared");
+                        if (decl.getDeclarationType() == DeclarationType::Function)
+                            throw exception::CompilerException("Cannot declare function in function");
+                        diff += sizeofType(type);
+                        variables[generateKey(scope, name)] = Variable{type, offset, nullptr, false};
+                        break;
+                }
+            }
+
+            if (diff != 0) {
+                instructions.push_back(std::make_shared<ASM::Sub>(ASM::RSP, ASM::Immediate(diff)));
+                functionSize += instructions.back()->getSize();
             }
         }
 
-        if (diff != 0) {
-            instructions.push_back(std::make_shared<ASM::Sub>(ASM::RSP, ASM::Immediate(diff)));
-            functionSize += instructions.back()->getSize();
-        }
-
-        diff = 0;
 
         for (auto &statement : block.getStatements()) {
             if (doesReturn) {
@@ -1651,26 +2007,28 @@ namespace raven {
                     break;
                 case StatementType::Block:
                     scope = scope / ("block");
-                    sizeStack.push(offset);
                     tmp = handleBlock(static_cast<Block>(*statement.get()), returnType, doesReturn);
                     instructions.insert(instructions.end(), tmp.begin(), tmp.end());
-                    scope = scope.parent_path();
-                    if (!stackOverride) {
-                        diff = offset - sizeStack.top();
-                        sizeStack.pop();
-                        if (diff != 0) {
-                            add = std::make_shared<ASM::Add>(ASM::RSP, ASM::Immediate(diff));
-                            instructions.push_back(add);
-                            functionSize += add->getSize();
-                        }
-                        offset -= diff;
-                    }
                     break;
                 case StatementType::If:
                     tmp = handleIf(static_cast<If>(*statement.get()), returnType, ifReturn, altReturn);
                     instructions.insert(instructions.end(), tmp.begin(), tmp.end());
                     if (ifReturn && altReturn)
                         doesReturn = true;
+            }
+        }
+
+        if (!stackOverride) {
+            if (scope != "root") {
+                scope = scope.parent_path();
+                diff = offset - sizeStack.top();
+                sizeStack.pop();
+                if (diff != 0) {
+                    add = std::make_shared<ASM::Add>(ASM::RSP, ASM::Immediate(diff));
+                    instructions.push_back(add);
+                    functionSize += add->getSize();
+                }
+                offset -= diff;
             }
         }
 

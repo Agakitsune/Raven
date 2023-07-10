@@ -104,6 +104,7 @@ namespace raven {
             std::string getExpressionType(const Expression &exp);
             bool isIntegralType(const std::string &type);
             bool needPromotion(ASM::Register reg, const std::string &type);
+            void destroyScope(const std::filesystem::path &scope);
 
             // variable
 
@@ -121,13 +122,16 @@ namespace raven {
                                                                     ASM::Register reg,
                                                                     const std::function<std::vector<std::shared_ptr<ASM::Instruction>>(ASM::Register, ASM::Register)> &classic,
                                                                     const std::function<std::vector<std::shared_ptr<ASM::Instruction>>(ASM::Register, const ASM::Immediate&)> &variant,
-                                                                    const std::function<long(long, long)> &optimize);
+                                                                    const std::function<long(long, long)> &optimize,
+                                                                    bool ignoreOptimize = false);
 
             std::vector<std::shared_ptr<ASM::Instruction>> loadOperation(const Operation &op, ASM::Register reg);
 
             std::vector<std::shared_ptr<ASM::Instruction>> loadUpdate(const Expression &exp, ASM::Register reg, bool inc);
+
             std::vector<std::shared_ptr<ASM::Instruction>> loadExpression(const Expression &exp, ASM::Register reg);
             std::vector<std::shared_ptr<ASM::Instruction>> logicExpression(const Expression &exp, ASM::Register reg, bool _not);
+            std::vector<std::shared_ptr<ASM::Instruction>> jmpExpression(const Expression &exp, bool &ignoreBase, bool &ignoreAlternate);
 
             std::vector<std::shared_ptr<ASM::Instruction>> logicRegister(ASM::Register reg, bool _not);
 

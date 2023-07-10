@@ -167,6 +167,7 @@ namespace raven {
                 behavior->unserializeDecl(input);
                 return Declaration(dynamic_cast<FunctionDeclarationBehavior&>(*behavior));
         }
+        return Declaration();
     }
 
     template<>
