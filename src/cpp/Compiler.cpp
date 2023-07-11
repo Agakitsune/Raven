@@ -489,10 +489,12 @@ namespace raven {
                     auto update = std::make_shared<ASM::Inc>();
                     update->setReg(reg);
                     instructions.push_back(update);
+                    functionSize += update->getSize();
                 } else {
                     auto update = std::make_shared<ASM::Dec>();
                     update->setReg(reg);
                     instructions.push_back(update);
+                    functionSize += update->getSize();
                 }
                 tmp = storeIndex(idx, reg);
                 instructions.insert(instructions.end(), tmp.begin(), tmp.end());
@@ -506,10 +508,12 @@ namespace raven {
                     auto update = std::make_shared<ASM::Inc>();
                     update->setReg(reg);
                     instructions.push_back(update);
+                    functionSize += update->getSize();
                 } else {
                     auto update = std::make_shared<ASM::Dec>();
                     update->setReg(reg);
                     instructions.push_back(update);
+                    functionSize += update->getSize();
                 }
                 tmp = storeVariable(id.getId(), reg);
                 instructions.insert(instructions.end(), tmp.begin(), tmp.end());
@@ -1864,7 +1868,6 @@ namespace raven {
 
         if (!ifBase) {
             scope = scope / ("main");
-            sizeStack.push(offset);
             tmp = handleBlock(if_.getBlock(), returnType, doesReturn);
             instructions.insert(instructions.end(), tmp.begin(), tmp.end());
         }
@@ -1898,7 +1901,6 @@ namespace raven {
                 alternateReturn = _1 && _2;
             } else {
                 scope = scope / ("alternate");
-                sizeStack.push(offset);
                 tmp = handleBlock(if_.getAlternate<Block>(), returnType, alternateReturn);
                 instructions.insert(instructions.end(), tmp.begin(), tmp.end());
             }
@@ -1914,6 +1916,89 @@ namespace raven {
                 blkSize = functionSize - blkSize;
                 jump->setValue(ASM::Immediate(blkSize).setSize(ASM::IMM32));
             }
+        }
+
+        return instructions;
+    }
+
+    std::vector<std::shared_ptr<ASM::Instruction>> FunctionCompiler::handleWhile(const While &while_, const std::string &returnType, bool &doesReturn) {
+        std::vector<std::shared_ptr<ASM::Instruction>> instructions;
+        std::vector<std::shared_ptr<ASM::Instruction>> tmp;
+        size_t blkSize = 0;
+        size_t diff = 0;
+        long begin = 0;
+
+        bool ifBase = false;
+        bool _ = false;
+
+        ASM::Jmp *jump = nullptr;
+
+        sizeStack.push(offset);
+        for (auto &statement : while_.getBlock().getStatements()) {
+            std::string name;
+            std::string type;
+            Declaration decl;
+            switch (statement->getVariant()) {
+                case StatementType::Declaration:
+                    decl = static_cast<Declaration>(*statement.get());
+                    name = decl.getDeclaration().getName();
+                    type = decl.getDeclaration().getType();
+                    if (hasVariable(name))
+                        throw exception::CompilerException("Variable '" + name + "' already declared");
+                    if (decl.getDeclarationType() == DeclarationType::Function)
+                        throw exception::CompilerException("Cannot declare function in function");
+                    diff += sizeofType(type);
+                    variables[generateKey(scope, name)] = Variable{type, offset, nullptr, false};
+                    break;
+            }
+        }
+
+        if (diff != 0) {
+            instructions.push_back(std::make_shared<ASM::Sub>(ASM::RSP, ASM::Immediate(diff)));
+            functionSize += instructions.back()->getSize();
+        }
+
+        begin = functionSize;
+
+        tmp = jmpExpression(while_.getCondition(), ifBase, _);
+        instructions.insert(instructions.end(), tmp.begin(), tmp.end());
+
+        blkSize = functionSize;
+
+        if (!ifBase && !_) {
+            jump = dynamic_cast<ASM::Jmp*>(instructions.back().get());
+        }
+
+        if (ifBase) {
+            log::warn << "while is never used" << log::endl;
+            return {};
+        }
+
+        scope = scope / ("loop");
+        tmp = handleBlock(while_.getBlock(), returnType, doesReturn, true);
+        instructions.insert(instructions.end(), tmp.begin(), tmp.end());
+
+        auto jmpB = std::make_shared<ASM::Jmp>(ASM::Immediate(begin - (functionSize + 5)).setSize(ASM::IMM32));
+        instructions.push_back(jmpB);
+        functionSize += jmpB->getSize();
+
+        if (_ && !doesReturn) {
+            log::warn << "while may be infinite" << log::endl;
+        }
+
+        if (jump)
+            jump->setValue(ASM::Immediate(functionSize - blkSize).setSize(ASM::IMM32));
+
+        if (!doesReturn) {
+            scope = scope.parent_path();
+            diff = offset - sizeStack.top();
+            sizeStack.pop();
+            if (diff != 0) {
+                auto add = std::make_shared<ASM::Add>(ASM::RSP, ASM::Immediate(diff));
+                instructions.push_back(add);
+                functionSize += add->getSize();
+            }
+            offset -= diff;
         }
 
         return instructions;
@@ -2015,6 +2100,10 @@ namespace raven {
                     instructions.insert(instructions.end(), tmp.begin(), tmp.end());
                     if (ifReturn && altReturn)
                         doesReturn = true;
+                case StatementType::Loop:
+                    tmp = handleWhile(static_cast<While>(*statement.get()), returnType, doesReturn);
+                    instructions.insert(instructions.end(), tmp.begin(), tmp.end());
+                    break;
             }
         }
 

@@ -1,13 +1,13 @@
+Integer affiche(String s) {
+    println(s);
+    return 0;
+}
+
 Integer main(Integer a, String[] argv) {
-    if (a == 3) {
-        Integer c = 2;
-        println("Into if");
-    } else if (a == 2) {
-        Integer c = 2;
-        println("Into alternate if");
-    } else {
-        Integer c = 2;
-        println("Into else");
+    Integer i = 0;
+    while (i < 10) {
+        affiche("Hello");
+        i++;
     }
     return 0;
 }

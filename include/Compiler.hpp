@@ -150,6 +150,10 @@ namespace raven {
                                                                     bool &doesReturn,
                                                                     bool &alternateReturn);
 
+            std::vector<std::shared_ptr<ASM::Instruction>> handleWhile(const While &while_,
+                                                                        const std::string &returnType,
+                                                                        bool &doesReturn);
+
             std::vector<std::shared_ptr<ASM::Instruction>> handleBlock(const Block &block,
                                                                         const std::string &returnType,
                                                                         bool &doesReturn,
