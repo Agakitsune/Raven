@@ -17,7 +17,7 @@ import Control.Arrow
 import Data.Text (Text, pack, unpack)
 import Data.Void
 import Data.Char (isAlpha, isAlphaNum, isDigit, isOctDigit, isHexDigit)
-import Data.List
+import Data.List (intercalate, length)
 import Data.Tuple (swap)
 import Data.Set (Set, singleton, size)
 -- import Data.String (fromString)
@@ -567,18 +567,18 @@ expression = do
      if end
      then do fail "expected expression"
      else do
-     r <- observing $ mutateExpression =<< try preUpdateExpression <|> unaryExpression <|> leafExpression
-     case r of
-          (Left (TrivialError i s u)) -> setOffset i *> fail "invalid expression"
-          (Left (FancyError i s)) -> do
-               term <- observing $ (whitespace *> (lookAhead $ single ';'))
-               case term of
-                    (Right _) -> fail "expected expression"
-                    (Left _) -> do
-                         if size s == 1
-                         then setOffset i *> fancyFailure s
-                         else setOffset i *> fail "invalid expression"
-          (Right e) -> pure e
+          r <- observing $ mutateExpression =<< try preUpdateExpression <|> unaryExpression <|> leafExpression
+          case r of
+               (Left (TrivialError i s u)) -> setOffset i *> fail "invalid expression"
+               (Left (FancyError i s)) -> do
+                    term <- observing $ (whitespace *> (lookAhead $ single ';'))
+                    case term of
+                         (Right _) -> fail "expected expression"
+                         (Left _) -> do
+                              if size s == 1
+                              then setOffset i *> fancyFailure s
+                              else setOffset i *> fail "invalid expression"
+               (Right e) -> pure e
 
 
 block :: Parser Block
@@ -622,109 +622,109 @@ statement' inBlk = do
                case r of
                     (Left _) -> pure loop
                     (Right _) -> do
-                    if inBlk
-                    then do pure loop
-                    else do setOffset o *> fail "expected '{'"
+                         if inBlk
+                         then pure loop
+                         else setOffset o *> fail "expected '{'"
           (Left (TrivialError i s u)) -> setOffset i *> failure s u
           (Left (FancyError i s)) -> do
                if (s /= (singleton (ErrorFail "expected 'while' keyword")))
                then do setOffset i *> fancyFailure s
                else do
-               condi <- setInput input *> observing ifStatement
-               case condi of
-                    (Right condi) -> do
-                         r <- observing $ whitespace *> (lookAhead $ single '}')
-                         case r of
-                              (Left _) -> pure condi
-                              (Right _) -> do
-                              if inBlk
-                              then do pure condi
-                              else do setOffset o *> fail "expected '{'"
-                    (Left (FancyError i s)) -> do
-                         if (s /= (singleton (ErrorFail "expected 'if' keyword")))
-                         then do setOffset i *> fancyFailure s
-                         else do
-                         blk <- setInput input *> observing blockStatement
-                         case blk of
-                              (Right blk) -> do
-                                   r <- observing $ whitespace *> (lookAhead $ single '}')
-                                   case r of
-                                        (Left _) -> pure blk
-                                        (Right _) -> do
+                    condi <- setInput input *> observing ifStatement
+                    case condi of
+                         (Right condi) -> do
+                              r <- observing $ whitespace *> (lookAhead $ single '}')
+                              case r of
+                                   (Left _) -> pure condi
+                                   (Right _) -> do
                                         if inBlk
-                                        then do pure blk
-                                        else do setOffset o *> fail "expected '{'"
-                              (Left (FancyError i s)) -> do
-                                   if (s /= (singleton (ErrorFail "expected '{'")))
-                                   then do setOffset i *> fancyFailure s
-                                   else do
-                                   variable <- setInput input *> observing variableDeclarationStatement
-                                   case variable of
-                                        (Right variable) -> do
+                                        then pure condi
+                                        else setOffset o *> fail "expected '{'"
+                         (Left (FancyError i s)) -> do
+                              if (s /= (singleton (ErrorFail "expected 'if' keyword")))
+                              then do setOffset i *> fancyFailure s
+                              else do
+                                   blk <- setInput input *> observing blockStatement
+                                   case blk of
+                                        (Right blk) -> do
                                              r <- observing $ whitespace *> (lookAhead $ single '}')
                                              case r of
-                                                  (Left _) -> pure variable
+                                                  (Left _) -> pure blk
                                                   (Right _) -> do
-                                                  if inBlk
-                                                  then do pure variable
-                                                  else do setOffset o *> fail "expected '{'"
+                                                       if inBlk
+                                                       then pure blk
+                                                       else setOffset o *> fail "expected '{'"
                                         (Left (FancyError i s)) -> do
-                                             if (s /= (singleton (ErrorFail "expected type")))
+                                             if (s /= (singleton (ErrorFail "expected '{'")))
                                              then do setOffset i *> fancyFailure s
                                              else do
-                                             ret <- setInput input *> observing returnStatement
-                                             case ret of
-                                                  (Right ret) -> do
-                                                       r <- observing $ whitespace *> (lookAhead $ single '}')
-                                                       case r of
-                                                            (Left _) -> pure ret
-                                                            (Right _) -> do
-                                                            if inBlk
-                                                            then do pure ret
-                                                            else do setOffset o *> fail "expected '{'"
-                                                  (Left (FancyError i s)) -> do
-                                                       if (s /= (singleton (ErrorFail "expected 'return' keyword")))
-                                                       then do setOffset i *> fancyFailure s
-                                                       else do
-                                                       exp <- setInput input *> observing expressionStatement
-                                                       case exp of
-                                                            (Right exp) -> do
-                                                                 r <- observing $ whitespace *> (lookAhead $ single '}')
-                                                                 case r of
-                                                                      (Left _) -> pure exp
-                                                                      (Right _) -> do
+                                                  variable <- setInput input *> observing variableDeclarationStatement
+                                                  case variable of
+                                                       (Right variable) -> do
+                                                            r <- observing $ whitespace *> (lookAhead $ single '}')
+                                                            case r of
+                                                                 (Left _) -> pure variable
+                                                                 (Right _) -> do
                                                                       if inBlk
-                                                                      then do pure exp
-                                                                      else do setOffset o *> fail "expected '{'"
-                                                            (Left (FancyError i s)) -> setOffset i *> fancyFailure s
-                                                            (Left (TrivialError i s u)) -> setOffset i *> failure s u
-                                        (Left (TrivialError i s u)) -> do
-                                             ret <- setInput input *> observing returnStatement
-                                             case ret of
-                                                  (Right ret) -> do
-                                                       r <- observing $ whitespace *> (lookAhead $ single '}')
-                                                       case r of
-                                                            (Left _) -> pure ret
-                                                            (Right _) -> do
-                                                            if inBlk
-                                                            then do pure ret
-                                                            else do setOffset o *> fail "expected '{'"
-                                                  (Left (FancyError i s)) -> do
-                                                       if (s /= (singleton (ErrorFail "expected 'return' keyword")))
-                                                       then do setOffset i *> fancyFailure s
-                                                       else do
-                                                       exp <- setInput input *> observing expressionStatement
-                                                       case exp of
-                                                            (Right exp) -> do
-                                                                 r <- observing $ whitespace *> (lookAhead $ single '}')
-                                                                 case r of
-                                                                      (Left _) -> pure exp
-                                                                      (Right _) -> do
-                                                                      if inBlk
-                                                                      then do pure exp
-                                                                      else do setOffset o *> fail "expected '{'"
-                                                            (Left (FancyError i s)) -> setOffset i *> fancyFailure s
-                                                            (Left (TrivialError i s u)) -> setOffset i *> failure s u
+                                                                      then pure variable
+                                                                      else setOffset o *> fail "expected '{'"
+                                                       (Left (FancyError i s)) -> do
+                                                            if (s /= (singleton (ErrorFail "expected type")))
+                                                            then do setOffset i *> fancyFailure s
+                                                            else do
+                                                                 ret <- setInput input *> observing returnStatement
+                                                                 case ret of
+                                                                      (Right ret) -> do
+                                                                           r <- observing $ whitespace *> (lookAhead $ single '}')
+                                                                           case r of
+                                                                                (Left _) -> pure ret
+                                                                                (Right _) -> do
+                                                                                     if inBlk
+                                                                                     then pure ret
+                                                                                     else setOffset o *> fail "expected '{'"
+                                                                      (Left (FancyError i s)) -> do
+                                                                           if (s /= (singleton (ErrorFail "expected 'return' keyword")))
+                                                                           then do setOffset i *> fancyFailure s
+                                                                           else do
+                                                                                exp <- setInput input *> observing expressionStatement
+                                                                                case exp of
+                                                                                     (Right exp) -> do
+                                                                                          r <- observing $ whitespace *> (lookAhead $ single '}')
+                                                                                          case r of
+                                                                                               (Left _) -> pure exp
+                                                                                               (Right _) -> do
+                                                                                                    if inBlk
+                                                                                                    then pure exp
+                                                                                                    else setOffset o *> fail "expected '{'"
+                                                                                     (Left (FancyError i s)) -> setOffset i *> fancyFailure s
+                                                                                     (Left (TrivialError i s u)) -> setOffset i *> failure s u
+                                                       (Left (TrivialError i s u)) -> do
+                                                            ret <- setInput input *> observing returnStatement
+                                                            case ret of
+                                                                 (Right ret) -> do
+                                                                      r <- observing $ whitespace *> (lookAhead $ single '}')
+                                                                      case r of
+                                                                           (Left _) -> pure ret
+                                                                           (Right _) -> do
+                                                                                if inBlk
+                                                                                then pure ret
+                                                                                else setOffset o *> fail "expected '{'"
+                                                                 (Left (FancyError i s)) -> do
+                                                                      if (s /= (singleton (ErrorFail "expected 'return' keyword")))
+                                                                      then do setOffset i *> fancyFailure s
+                                                                      else do
+                                                                           exp <- setInput input *> observing expressionStatement
+                                                                           case exp of
+                                                                                (Right exp) -> do
+                                                                                     r <- observing $ whitespace *> (lookAhead $ single '}')
+                                                                                     case r of
+                                                                                          (Left _) -> pure exp
+                                                                                          (Right _) -> do
+                                                                                               if inBlk
+                                                                                               then pure exp
+                                                                                               else setOffset o *> fail "expected '{'"
+                                                                                (Left (FancyError i s)) -> setOffset i *> fancyFailure s
+                                                                                (Left (TrivialError i s u)) -> setOffset i *> failure s u
 
 statement :: Parser Statement
 statement = statement' False

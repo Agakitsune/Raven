@@ -101,18 +101,19 @@ namespace raven::ASM {
                         _rex = std::nullopt;
                     break;
                 case S16:
-                    opcode = 0x39;
-                    _rm = ModRM().setMod(Mod::Mod03).setRm(_dst).setReg(r);
                     setLegacy(OPOverride);
-                    break;
                 case S32:
                     opcode = 0x39;
                     _rm = ModRM().setMod(Mod::Mod03).setRm(_dst).setReg(r);
+                    if (_dst.useREX || r.useREX)
+                        _rex = REX().B(_dst.extend).R(r.extend);
+                    else
+                        _rex = std::nullopt;
                     break;
                 case S64:
                     opcode = 0x39;
                     _rm = ModRM().setMod(Mod::Mod03).setRm(_dst).setReg(r);
-                    _rex = REX().W(true);
+                    _rex = REX().W(true).B(_dst.extend).R(r.extend);
                     break;
             }
         }

@@ -13,7 +13,7 @@ CXX = g++
 
 PCK = -package megaparsec -package utf8-string
 
-IFLAGS = -I`ghc --print-libdir`/include -I./include
+IFLAGS = -I`ghc --print-libdir`/../include -I./include
 CXXFLAGS = -std=c++20 $(IFLAGS) -g3 -ggdb -g -rdynamic
 LIBS = -lstdc++
 

@@ -25,6 +25,8 @@ namespace raven {
             ExpressionType::ExpLiteral,
             ExpressionType::ExpIdentifier,
             ExpressionType::ExpCall,
+            ExpressionType::ExpIndex,
+            ExpressionType::ExpArray,
         };
 
         if (leaf.contains(expression->getVariant())) {

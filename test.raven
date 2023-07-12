@@ -1,12 +1,7 @@
-Integer affiche(String s) {
-    println(s);
-    return 0;
-}
-
 Integer main(Integer a, String[] argv) {
     Integer i = 0;
-    while (i < 10) {
-        affiche("Hello");
+    while (i < a) {
+        println(argv[i]);
         i++;
     }
     return 0;

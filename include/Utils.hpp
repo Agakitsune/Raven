@@ -8,6 +8,7 @@
 #pragma once
 
 #include <locale>
+#include <cstdint>
 
 namespace raven {
 

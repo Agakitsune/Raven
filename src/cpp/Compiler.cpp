@@ -652,6 +652,8 @@ namespace raven {
                 tmp = loadExpression(exp2, dest);
                 instructions.insert(instructions.end(), tmp.begin(), tmp.end());
             }
+            std::cout << "reg: " << (int)reg.reg << std::endl;
+            std::cout << "extend dest: " << (int)dest.extend << std::endl;
             tmp = classic(reg, dest);
             instructions.insert(instructions.end(), tmp.begin(), tmp.end());
             for (auto &it : tmp) {
